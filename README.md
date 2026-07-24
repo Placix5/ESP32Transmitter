@@ -71,7 +71,7 @@ placa.
 (MG996R o similar).
 
 La lista detallada y los avisos de alimentación están en
-[**Puesta en marcha**](docs/09-PUESTA-EN-MARCHA.md).
+[**Requisitos y entorno**](docs/09-ENTORNO-ESP-IDF.md).
 
 ---
 
@@ -86,8 +86,10 @@ idf.py -p PUERTO flash monitor
 ```
 
 No hace falta `--recursive`: las librerías (TinyUSB y el driver XInput) vienen
-incluidas en `components/`. Los pasos completos, desde instalar ESP-IDF hasta
-conducir, están en [**Puesta en marcha**](docs/09-PUESTA-EN-MARCHA.md).
+incluidas en `components/`. ¿Primera vez con ESP32? Empieza por
+[**Requisitos y entorno**](docs/09-ENTORNO-ESP-IDF.md) para dejar ESP-IDF y VSCode
+listos, y sigue con [**Puesta en marcha**](docs/10-PUESTA-EN-MARCHA.md), que además
+te lo explica todo con botones, sin tocar la terminal.
 
 ---
 
@@ -111,9 +113,10 @@ Un adelanto de lo que encontrarás:
 | [PWM](docs/06-PWM.md) | Cómo un número acaba moviendo un servo y un motor. |
 | [FreeRTOS y núcleos](docs/07-FREERTOS-Y-NUCLEOS.md) | Tareas, los dos núcleos del S3 y el arranque del USB. |
 | [El receptor](docs/08-EL-RECEPTOR.md) | Qué hace el ESP32-C3 del coche. |
-| [Puesta en marcha](docs/09-PUESTA-EN-MARCHA.md) | Instalar, compilar, flashear y conducir. |
-| [Adaptarlo a tu coche](docs/10-ADAPTARLO-A-TU-COCHE.md) | Ajustes y calibración para tu chasis. |
-| [Hoja de ruta](docs/11-HOJA-DE-RUTA.md) | Lo que falta y en qué puedes ayudar. |
+| [Requisitos y entorno](docs/09-ENTORNO-ESP-IDF.md) | Hardware necesario e instalar ESP-IDF en VSCode paso a paso. |
+| [Puesta en marcha](docs/10-PUESTA-EN-MARCHA.md) | Compilar, flashear y conducir (con los botones de VSCode). |
+| [Adaptarlo a tu coche](docs/11-ADAPTARLO-A-TU-COCHE.md) | Ajustes y calibración para tu chasis. |
+| [Hoja de ruta](docs/12-HOJA-DE-RUTA.md) | Lo que falta y en qué puedes ayudar. |
 
 ---
 

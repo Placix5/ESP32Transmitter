@@ -42,7 +42,7 @@ va de 0 a 180 siendo **90 el punto muerto**. Menos de 90 es acelerar hacia
 delante; más de 90 es frenar o ir marcha atrás. Que "gas a tope" en Sport sea 0 y
 "freno a tope" sea 180 es simplemente cómo está calibrado este variador. Si el tuyo
 va al revés, se arregla cambiando esos números en la configuración (lo ves en
-[Adaptarlo a tu coche](10-ADAPTARLO-A-TU-COCHE.md)).
+[Adaptarlo a tu coche](11-ADAPTARLO-A-TU-COCHE.md)).
 
 ---
 

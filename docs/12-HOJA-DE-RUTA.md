@@ -1,4 +1,4 @@
-# 11. Hoja de ruta
+# 12. Hoja de ruta
 
 Prefiero ser sincero con el estado del proyecto. Funciona y se conduce bien, pero
 está vivo y le quedan cosas. Si te apetece colaborar, cualquiera de estas es un
@@ -43,4 +43,4 @@ anda.
 
 ---
 
-« [Anterior: Adaptarlo a tu coche](10-ADAPTARLO-A-TU-COCHE.md) · [📚 Índice](README.md) · [Volver a la portada](../README.md)
+« [Anterior: Adaptarlo a tu coche](11-ADAPTARLO-A-TU-COCHE.md) · [📚 Índice](README.md) · [Volver a la portada](../README.md)

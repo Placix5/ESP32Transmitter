@@ -25,7 +25,7 @@ En este proyecto, la emisora manda los paquetes por **broadcast** (a la direcci�
 para empezar: no hay que emparejar nada, enciendes las dos placas y ya se hablan.
 La contrapartida es que no hay ni seguridad ni emparejamiento; cualquiera con un
 receptor en el mismo canal podría escuchar. Está en la
-[hoja de ruta](11-HOJA-DE-RUTA.md).
+[hoja de ruta](12-HOJA-DE-RUTA.md).
 
 > **Ojo con el canal Wi-Fi.** ESP-NOW solo funciona si emisora y receptor están en
 > el **mismo canal** de radio. Si algún día no se hablan aunque el código esté

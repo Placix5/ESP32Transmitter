@@ -21,7 +21,7 @@ que es **mucho más sencillo** que la emisora. Su vida entera cabe en cuatro pas
 > **Nota honesta:** ese fail-safe vive en el receptor, no en la emisora. La emisora
 > de ahora, si se desconecta el mando, simplemente **deja de enviar**. Funciona
 > porque el receptor cubre esa parte, pero lo suyo sería tener también una red de
-> seguridad en la emisora. Está apuntado en la [hoja de ruta](11-HOJA-DE-RUTA.md).
+> seguridad en la emisora. Está apuntado en la [hoja de ruta](12-HOJA-DE-RUTA.md).
 
 ## Por qué el receptor es tan simple
 
@@ -36,4 +36,4 @@ menos cosas pueden fallar dentro de él y más fácil es mantenerlo.
 
 ---
 
-« [Anterior: FreeRTOS y núcleos](07-FREERTOS-Y-NUCLEOS.md) · [📚 Índice](README.md) · [Siguiente: Puesta en marcha »](09-PUESTA-EN-MARCHA.md)
+« [Anterior: FreeRTOS y núcleos](07-FREERTOS-Y-NUCLEOS.md) · [📚 Índice](README.md) · [Siguiente: Requisitos y entorno »](09-ENTORNO-ESP-IDF.md)

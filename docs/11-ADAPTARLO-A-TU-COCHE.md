@@ -1,4 +1,4 @@
-# 10. Adaptarlo a tu coche
+# 11. Adaptarlo a tu coche
 
 Ningún coche de RC es igual que otro, así que casi seguro tendrás que ajustar un
 par de cosas. Todo lo tocable está en forma de `#define` al principio de
@@ -49,4 +49,4 @@ Con eso tendrás el coche a tu gusto y sin sustos.
 
 ---
 
-« [Anterior: Puesta en marcha](09-PUESTA-EN-MARCHA.md) · [📚 Índice](README.md) · [Siguiente: Hoja de ruta »](11-HOJA-DE-RUTA.md)
+« [Anterior: Puesta en marcha](10-PUESTA-EN-MARCHA.md) · [📚 Índice](README.md) · [Siguiente: Hoja de ruta »](12-HOJA-DE-RUTA.md)

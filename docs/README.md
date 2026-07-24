@@ -36,11 +36,13 @@ interese. Cada página tiene al pie una navegación para moverte.
 ### El otro lado y la práctica
 8. [**El receptor**](08-EL-RECEPTOR.md) — qué hace (y qué debe hacer) el ESP32-C3
    del coche.
-9. [**Puesta en marcha**](09-PUESTA-EN-MARCHA.md) — instalar ESP-IDF, compilar,
-   flashear y conducir.
-10. [**Adaptarlo a tu coche**](10-ADAPTARLO-A-TU-COCHE.md) — ajustes y calibración
+9. [**Requisitos y entorno**](09-ENTORNO-ESP-IDF.md) — el hardware necesario y cómo
+   instalar ESP-IDF en VSCode paso a paso.
+10. [**Puesta en marcha**](10-PUESTA-EN-MARCHA.md) — compilar, flashear y conducir
+    con los botones de VSCode (o por terminal).
+11. [**Adaptarlo a tu coche**](11-ADAPTARLO-A-TU-COCHE.md) — ajustes y calibración
     para tu chasis.
-11. [**Hoja de ruta**](11-HOJA-DE-RUTA.md) — lo que todavía no está bien y en qué
+12. [**Hoja de ruta**](12-HOJA-DE-RUTA.md) — lo que todavía no está bien y en qué
     puedes echar una mano.
 
 ---
