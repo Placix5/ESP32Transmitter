@@ -68,7 +68,9 @@ ModoConduccion modoSeleccionado = Eco;
 
 // Enlace y red
 uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-uint8_t client_mac[] = {0xAC, 0x27, 0x6E, 0xB1, 0x04, 0xD8};
+// MAC de la interfaz WiFi STA del receptor (ESP-NOW usa WiFi, NO la MAC de BT/Ethernet).
+// El ESP32-C3 derivaba: WiFi STA = base(+0)=EC, AP(+1)=ED, BT(+2)=EE, Ethernet(+3)=EF.
+uint8_t client_mac[] = {0xDC, 0x06, 0x75, 0xF9, 0x62, 0xEC};
 
 // Variables para el cambio de modo (Botones LB + RB)
 uint32_t tiempoInicioPulsacion = 0;
