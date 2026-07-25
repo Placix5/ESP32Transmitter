@@ -68,6 +68,7 @@ ModoConduccion modoSeleccionado = Eco;
 
 // Enlace y red
 uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+uint8_t client_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // Variables para el cambio de modo (Botones LB + RB)
 uint32_t tiempoInicioPulsacion = 0;
