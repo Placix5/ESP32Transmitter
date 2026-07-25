@@ -23,19 +23,20 @@
 // Configuración de límites del Servo
 #define ANGULO_MIN 65                  // Izquierda
 #define ANGULO_MAX 115                 // Derecha
+#define ANGULO_CENTRO 90              // Centro
 #define ESC_NEUTRO 90
 
 // Configuración de la zona muerta
 #define DEAD_ZONE 4000 
 
 // --- CONFIGURACIÓN DE POTENCIA POR MODO ---
-#define GAS_ECO 60                  
-#define GAS_NORMAL 30               
-#define GAS_SPORT 0                 
+#define GAS_ECO 120                  
+#define GAS_NORMAL 150               
+#define GAS_SPORT 180                 
 
-#define FRENO_ECO 120
-#define FRENO_NORMAL 150
-#define FRENO_SPORT 180
+#define FRENO_ECO 60
+#define FRENO_NORMAL 30
+#define FRENO_SPORT 0
 
 // Configuración de modos de conducción
 typedef enum {
@@ -58,11 +59,15 @@ ModoConduccion modoSeleccionado = Eco;
 // Enlace y red
 uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-// Variables para el cambio de modo (Botones R1+L1)
+// Variables para el cambio de modo (Botones LB + RB)
 uint32_t tiempoInicioPulsacion = 0;
-bool botonesPulsados = false;
+bool comboLBRBPulsado = false;   // ambos botones mantenidos ahora mismo
 bool modoCambiado = false;
 const uint32_t TIEMPO_PARA_CAMBIAR = 2000;
+
+// Último mando conocido (para poder vibrar / cambiar modo desde la tarea USB)
+uint8_t mando_dev_addr = 0;
+uint8_t mando_instance = 0;
 
 // Variables para controlar cuándo apagar la vibración
 bool vibracionActiva = false;
@@ -143,6 +148,10 @@ void tuh_xinput_umount_cb(uint8_t dev_addr, uint8_t instance) {
     // Apagamos LED si se desconecta
     led_strip_clear(led_strip);
     led_strip_refresh(led_strip);
+
+    // Reseteamos estados para no arrastrar una pulsación/vibración de un mando que ya no está
+    comboLBRBPulsado = false;
+    vibracionActiva = false;
 }
 
 void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_interface_t const *xinput_itf, uint16_t len) {
@@ -150,28 +159,29 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
     
     // 1. DIRECCIÓN
     int16_t rawX = pad->sThumbLX;
-    int angulo = 90;
+    int angulo = ANGULO_CENTRO; // Valor por defecto (centro) si no hay movimiento significativo
 
     if (rawX > DEAD_ZONE || rawX < -DEAD_ZONE) {
         angulo = map_value(rawX, -32768+DEAD_ZONE, 32767-DEAD_ZONE, ANGULO_MIN, ANGULO_MAX); 
         angulo = constrain_value(angulo, ANGULO_MIN, ANGULO_MAX);
     }
       
-    // 2. CAMBIO DE MODO
-    if ((pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) && (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER)) {
-        if (!botonesPulsados) {
-            botonesPulsados = true;
-            modoCambiado = false;
-            tiempoInicioPulsacion = millis();
-        } else {
-            if (!modoCambiado && (millis() - tiempoInicioPulsacion) >= TIEMPO_PARA_CAMBIAR) {
-                tiempoInicioPulsacion = millis();
-                cambiarModo(dev_addr, instance);
-                modoCambiado = true;
-            }
-        }
-    } else {
-        botonesPulsados = false;
+    // 2. DETECCIÓN DE LA COMBINACIÓN LB + RB
+    // Aquí SOLO registramos el estado de los botones. El temporizado (mantener 2 s) se
+    // evalúa en tusb_host_task con cadencia fija, porque el mando únicamente envía reportes
+    // cuando algo cambia: si mantienes los botones quietos puede dejar de enviarlos y el
+    // "millis() - inicio" nunca se comprobaría (por eso a veces no cambiaba de modo).
+    mando_dev_addr = dev_addr;
+    mando_instance = instance;
+    bool comboAhora = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) && (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+    if (comboAhora && !comboLBRBPulsado) {
+        // Flanco de pulsación: arrancamos el cronómetro
+        comboLBRBPulsado = true;
+        modoCambiado = false;
+        tiempoInicioPulsacion = millis();
+    } else if (!comboAhora) {
+        // Al soltar siempre llega un reporte (es un cambio de estado), así que esto sí es fiable
+        comboLBRBPulsado = false;
     }
 
     // 3. GATILLOS
@@ -193,14 +203,8 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
         }
     }
       
-    // --- CONTROL APAGADO VIBRACIÓN ---
-    if (vibracionActiva) {
-        if (millis() - tiempoInicioVibracion >= DURACION_VIBRACION) {
-            // Se acabó el tiempo, mandamos callar a los motores (0, 0)
-            tuh_xinput_set_rumble(dev_addr, instance, 0, 0, true);
-            vibracionActiva = false; 
-        }
-    }
+    // (El apagado de la vibración también se gestiona en tusb_host_task, por el mismo
+    //  motivo: no depender de que sigan llegando reportes del mando.)
 
     // 4. TRANSMISIÓN
     instrucciones.angulo_servo = (uint8_t)angulo;
@@ -218,7 +222,26 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
 void tusb_host_task(void *arg) {
     while (1) {
         tuh_task();
-        vTaskDelay(1); 
+
+        // CAMBIO DE MODO: mantener LB + RB durante TIEMPO_PARA_CAMBIAR.
+        // Se evalúa aquí (cadencia fija ~cada tick) y NO en el callback del reporte,
+        // porque el mando deja de enviar reportes si mantienes los botones quietos.
+        if (comboLBRBPulsado && !modoCambiado &&
+            (millis() - tiempoInicioPulsacion) >= TIEMPO_PARA_CAMBIAR) {
+            cambiarModo(mando_dev_addr, mando_instance);
+            modoCambiado = true;
+        }
+
+        // APAGADO DE LA VIBRACIÓN: mismo motivo, cadencia fija.
+        // IMPORTANTE: leemos millis() FRESCO aquí. Si reutilizásemos una marca tomada
+        // antes de cambiarModo(), tiempoInicioVibracion (fijado dentro) sería mayor y la
+        // resta sin signo se desbordaría, apagando el rumble en la misma vuelta.
+        if (vibracionActiva && (millis() - tiempoInicioVibracion) >= DURACION_VIBRACION) {
+            tuh_xinput_set_rumble(mando_dev_addr, mando_instance, 0, 0, true);
+            vibracionActiva = false;
+        }
+
+        vTaskDelay(1);
     }
 }
 

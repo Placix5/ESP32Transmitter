@@ -13,6 +13,6 @@
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\placi\\ESP32Transmitter\\build"
   ],
-  "idf.portWin": "COM3",
+  "idf.portWin": "COM8",
   "idf.flashType": "UART"
 }
