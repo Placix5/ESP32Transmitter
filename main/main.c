@@ -20,10 +20,20 @@
 // --- CONFIGURACIÓN ---
 #define PIN_LED 48 
 
-// Configuración de límites del Servo
-#define ANGULO_MIN 65                  // Izquierda
-#define ANGULO_MAX 115                 // Derecha
-#define ANGULO_CENTRO 90              // Centro
+// Configuración de límites del Servo (perillas independientes: ajustar por prueba y error)
+
+// =============== VALORES ORIGINALES ===============
+// ESTOS ÁNGULOS SON LOS ESTÁNDAR PERO PARA EL MODELO DKS-PRO CON PROBLEMAS EN LA DIRECCIÓN, 
+// HAY QUE AJUSTARLOS A MANO POR ESO HAY DOS JUEGOS DE VALORES (COMENTADOS Y ACTIVOS) PARA QUE 
+// PUEDAS PROBAR CUAL TE VA MEJOR
+
+//#define ANGULO_MIN 65                  // Izquierda ORIGINAL
+//#define ANGULO_MAX 115                 // Derecha ORIGINAL
+//#define ANGULO_CENTRO 90              // Centro ORIGINAL
+
+#define ANGULO_MIN 45                  // Tope stick a la IZQUIERDA (más pequeño = más giro izq.)
+#define ANGULO_MAX 115                 // Tope stick a la DERECHA  (más grande  = más giro der.)
+#define ANGULO_CENTRO 85               // Recto / trim (subir o bajar para enderezar las ruedas)
 #define ESC_NEUTRO 90
 
 // Configuración de la zona muerta
@@ -158,13 +168,20 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
     xinput_gamepad_t const *pad = &xinput_itf->pad;
     
     // 1. DIRECCIÓN
+    // Mapeamos cada mitad del stick por separado alrededor de ANGULO_CENTRO, para poder
+    // ajustar de forma INDEPENDIENTE cuánto gira a cada lado (las cogidas hacen que gire
+    // más a un lado que al otro) y usar ANGULO_CENTRO como trim de "ruedas rectas".
     int16_t rawX = pad->sThumbLX;
-    int angulo = ANGULO_CENTRO; // Valor por defecto (centro) si no hay movimiento significativo
+    int angulo = ANGULO_CENTRO; // Reposo = recto
 
-    if (rawX > DEAD_ZONE || rawX < -DEAD_ZONE) {
-        angulo = map_value(rawX, -32768+DEAD_ZONE, 32767-DEAD_ZONE, ANGULO_MIN, ANGULO_MAX); 
-        angulo = constrain_value(angulo, ANGULO_MIN, ANGULO_MAX);
+    if (rawX > DEAD_ZONE) {
+        // Stick a la derecha: centro -> ANGULO_MAX
+        angulo = map_value(rawX, DEAD_ZONE, 32767, ANGULO_CENTRO, ANGULO_MAX);
+    } else if (rawX < -DEAD_ZONE) {
+        // Stick a la izquierda: centro -> ANGULO_MIN
+        angulo = map_value(rawX, -DEAD_ZONE, -32768, ANGULO_CENTRO, ANGULO_MIN);
     }
+    angulo = constrain_value(angulo, ANGULO_MIN, ANGULO_MAX);
       
     // 2. DETECCIÓN DE LA COMBINACIÓN LB + RB
     // Aquí SOLO registramos el estado de los botones. El temporizado (mantener 2 s) se
