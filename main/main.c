@@ -68,7 +68,7 @@ ModoConduccion modoSeleccionado = Eco;
 
 // Enlace y red
 uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-uint8_t client_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+uint8_t client_mac[] = {0xAC, 0x27, 0x6E, 0xB1, 0x04, 0xD8};
 
 // Variables para el cambio de modo (Botones LB + RB)
 uint32_t tiempoInicioPulsacion = 0;
@@ -229,7 +229,7 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
     instrucciones.pwm_motor = (uint8_t)valorMotor;
     instrucciones.modo_conduccion = (uint8_t)modoSeleccionado;
 
-    esp_now_send(broadcast_mac, (uint8_t *) &instrucciones, sizeof(instrucciones));
+    esp_now_send(client_mac, (uint8_t *) &instrucciones, sizeof(instrucciones));
 
     // Pedimos el siguiente paquete de datos al mando
     tuh_xinput_receive_report(dev_addr, instance);
@@ -292,7 +292,7 @@ void app_main(void) {
     esp_now_init();
     
     esp_now_peer_info_t peerInfo = {};
-    memcpy(peerInfo.peer_addr, broadcast_mac, 6);
+    memcpy(peerInfo.peer_addr, client_mac, 6);
     peerInfo.channel = 0;     
     peerInfo.encrypt = false; 
     esp_now_add_peer(&peerInfo);
