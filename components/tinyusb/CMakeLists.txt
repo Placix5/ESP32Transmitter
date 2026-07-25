@@ -36,3 +36,10 @@ idf_component_register(
 
 # 5. MAGIA: Le decimos al componente que busque tu "tusb_config.h" en la carpeta main
 target_include_directories(${COMPONENT_LIB} PUBLIC "${CMAKE_SOURCE_DIR}/main")
+
+# 6. TinyUSB es codigo vendorizado de terceros: no tratamos sus warnings como errores.
+# El GCC mas reciente (ESP-IDF nuevo) emite -Wtype-limits en get_driver() de usbh.c
+# porque BUILTIN_DRIVER_COUNT == 0 (todas las clases host built-in estan desactivadas;
+# aqui solo usamos XInput como driver de aplicacion), y "drv_id < 0" con drv_id sin signo
+# es siempre falso. En el sobremesa el GCC antiguo no lo emitia; asi el build es portable.
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-error=type-limits)
