@@ -57,6 +57,17 @@ Ese parche es la razón por la que la librería viene **incluida** en el repo en
 de descargarse sola: si la bajaras de su sitio original, vendría sin el arreglo y
 no compilaría.
 
+Hubo un segundo retoque, esta vez en el `CMakeLists.txt` de TinyUSB
+([`components/tinyusb/CMakeLists.txt`](../components/tinyusb/CMakeLists.txt)). Con un
+GCC más moderno (el que trae el ESP-IDF nuevo), el compilador empezó a avisar de un
+`-Wtype-limits` dentro de `get_driver()` de `usbh.c`: como aquí **no usamos ningún
+driver USB de fábrica** (solo el de XInput como driver de aplicación), un contador
+interno vale cero y una comparación queda "siempre falsa". No es un fallo real, pero
+como ESP-IDF trata los avisos como errores, tumbaba la compilación. La solución es
+decirle que **no** convierta ese aviso concreto en error para el código de TinyUSB
+(que es de terceros), con `target_compile_options(... -Wno-error=type-limits)`. Así
+el proyecto compila igual en el ordenador de casa que en uno con un GCC más nuevo.
+
 ## El detalle del mando de Xbox Series
 
 Un apunte curioso que hay en la configuración

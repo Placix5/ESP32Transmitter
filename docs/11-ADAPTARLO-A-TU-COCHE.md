@@ -9,7 +9,8 @@ par de cosas. Todo lo tocable está en forma de `#define` al principio de
 | Parámetro | Qué hace | Valor por defecto |
 |-----------|----------|-------------------|
 | `PIN_LED` | Pin del LED RGB de la placa | `48` |
-| `ANGULO_MIN` / `ANGULO_MAX` | Giro máximo del servo a izquierda / derecha | `65` / `115` |
+| `ANGULO_MIN` / `ANGULO_MAX` | Giro máximo del servo a izquierda / derecha | `45` / `115` |
+| `ANGULO_CENTRO` | Ruedas rectas (*trim*): el ángulo con el stick en reposo | `85` |
 | `ESC_NEUTRO` | Punto muerto del variador (ni gas ni freno) | `90` |
 | `DEAD_ZONE` | Zona muerta del stick de dirección | `4000` |
 | `GAS_ECO/NORMAL/SPORT` | Aceleración máxima por modo | `60` / `30` / `0` |
@@ -19,11 +20,13 @@ par de cosas. Todo lo tocable está en forma de `#define` al principio de
 ## Problemas típicos y cómo resolverlos
 
 - **El coche gira poco o se pasa de frenada.** Juega con `ANGULO_MIN` y
-  `ANGULO_MAX`. Acércalos entre sí para un giro más suave, sepáralos para un giro
-  más agresivo. Ve poco a poco: si te pasas, el servo puede forzar la dirección
-  contra el tope físico.
-- **El coche se desvía solo yendo recto.** Sube un poco `DEAD_ZONE`. Si aun con el
-  stick centrado tira hacia un lado, o bien el joystick tiene mucho juego, o bien
+  `ANGULO_MAX`, que son **independientes**: cada uno controla un lado. Si gira más a
+  un lado que al otro (típico por las cogidas del chasis), ajusta solo el tope de ese
+  lado. Ve poco a poco: si te pasas, el servo puede forzar la dirección contra el
+  tope físico.
+- **El coche se desvía solo yendo recto.** Lo primero, ajusta el *trim*: sube o baja
+  `ANGULO_CENTRO` hasta que con el stick en reposo las ruedas queden rectas. Si aun
+  así tira, sube un poco `DEAD_ZONE`; y si sigue, o el joystick tiene mucho juego o
   el trapecio de dirección necesita un ajuste mecánico.
 - **Va demasiado bruto.** Empieza siempre en modo Eco (es el de por defecto al
   conectar) y baja los límites de gas. Recuerda: menos de 90 es acelerar, así que
@@ -39,9 +42,10 @@ Antes de salir a rodar, calibra sobre la mesa:
 
 1. Coche **levantado**, ruedas al aire.
 2. Conecta y comprueba que el centro del stick deja la dirección recta. Si no,
-   ajusta `DEAD_ZONE` o el centrado mecánico.
-3. Prueba los extremos de dirección y ajusta `ANGULO_MIN`/`ANGULO_MAX` hasta que
-   el servo llegue justo a los topes sin forzar.
+   ajusta `ANGULO_CENTRO` (el *trim*) y, si hace falta, `DEAD_ZONE` o el centrado
+   mecánico.
+3. Prueba los extremos de dirección y ajusta `ANGULO_MIN`/`ANGULO_MAX` (cada lado
+   por separado) hasta que el servo llegue justo a los topes sin forzar.
 4. Prueba gas y freno en modo Eco, y solo cuando lo tengas fino, sube a Normal y
    Sport.
 

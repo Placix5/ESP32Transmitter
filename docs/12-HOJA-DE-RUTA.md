@@ -4,17 +4,30 @@ Prefiero ser sincero con el estado del proyecto. Funciona y se conduce bien, per
 está vivo y le quedan cosas. Si te apetece colaborar, cualquiera de estas es un
 buen punto de entrada.
 
+## Ya resuelto (antes estaba en esta lista)
+
+Para que se note el progreso, dejo aquí lo que ya está hecho:
+
+- ✅ **Fail-safe en la emisora.** Si se desenchufa el mando, la emisora pasa a NEUTRO
+  al instante y lo sigue enviando a 50 Hz. Ver
+  [Comunicación ESP-NOW](04-COMUNICACION-ESP-NOW.md).
+- ✅ **Envío a ritmo fijo (50 Hz).** Ya no se manda "por cada reporte del mando",
+  sino un flujo constante que permite al receptor detectar de verdad la pérdida de
+  señal. Ver [FreeRTOS y núcleos](07-FREERTOS-Y-NUCLEOS.md).
+- ✅ **Enlace unicast + Long Range.** Se dejó el broadcast: ahora la emisora habla
+  directamente a la MAC del coche, con Long Range y sin ahorro de energía para más
+  alcance y menos latencia.
+- ✅ **El receptor tiene su propio repo** (`ESP32Receiver`), como proyecto ESP-IDF
+  nativo.
+
 ## Lo que todavía no está bien (y me consta)
 
-- **El receptor todavía no tiene repo propio.** Está por publicar.
-- **No hay emparejamiento ni cifrado.** Ahora mismo se emite por broadcast a todo
-  el que escuche. Lo suyo sería que emisora y coche se reconozcan entre sí. Ver
+- **No hay cifrado.** El enlace ya es *unicast* (dirigido a la MAC del coche), pero
+  va sin cifrar: cualquiera en el mismo canal y con Long Range podría escuchar o
+  suplantar. Lo suyo sería activar el cifrado de ESP-NOW. Ver
   [Comunicación ESP-NOW](04-COMUNICACION-ESP-NOW.md).
 - **El canal Wi-Fi no está fijado a mano.** Es la causa más típica de que dos
   placas no se hablen; conviene fijarlo explícitamente en ambos lados.
-- **Falta fail-safe en la emisora.** El receptor sí para el motor si se queda sin
-  señal, pero la emisora debería tener también su propia red de seguridad. Ver
-  [El receptor](08-EL-RECEPTOR.md).
 - **No se comprueban los errores de arranque.** Si el LED o la radio fallan al
   iniciarse, el programa sigue como si nada. Habría que abortar con un mensaje
   claro.

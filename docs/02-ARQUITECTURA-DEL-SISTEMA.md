@@ -38,7 +38,7 @@ girar.
    y al driver de XInput.
 3. **El S3 hace cuentas.** Descarta el ruido si el stick está casi centrado
    (la zona muerta), y convierte ese -32768...+32767 en un ángulo de servo cómodo,
-   entre 65 y 115 grados.
+   dentro de los topes que hayas fijado (ajustables a cada lado por separado).
 4. **Empaqueta el resultado** junto con el valor del motor y el modo actual en un
    paquetito de 3 bytes.
 5. **Lo dispara por ESP-NOW.** El paquete sale por la antena Wi-Fi del S3.
@@ -47,8 +47,8 @@ girar.
    otra le dice al variador cuánta caña meter.
 8. **El servo gira y el coche tuerce.** Fin del viaje.
 
-Todo esto, de tu pulgar a la rueda, ocurre en milisegundos y se repite decenas de
-veces por segundo. Por eso la conducción se siente inmediata.
+Todo esto, de tu pulgar a la rueda, ocurre en milisegundos y se repite **50 veces
+por segundo** (50 Hz), a ritmo constante. Por eso la conducción se siente inmediata.
 
 En las siguientes secciones abrimos cada tramo del viaje: primero cómo se lee el
 mando, luego cómo se manda la orden al coche.

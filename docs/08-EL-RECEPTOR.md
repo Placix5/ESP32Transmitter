@@ -1,8 +1,10 @@
 # 8. El receptor: el otro lado de la radio
 
-El código del receptor no está en este repositorio (irá en el suyo propio), pero
-para entender el sistema completo conviene saber qué hace. Y la buena noticia es
-que es **mucho más sencillo** que la emisora. Su vida entera cabe en cuatro pasos:
+El código del receptor vive en su **propio repositorio** (`ESP32Receiver`) y es,
+como la emisora, un proyecto **ESP-IDF nativo** — ya no es Arduino ni PlatformIO,
+así que las dos mitades comparten herramientas y forma de compilar. Para entender el
+sistema completo conviene saber qué hace, y la buena noticia es que es **mucho más
+sencillo** que la emisora. Su vida entera cabe en cuatro pasos:
 
 1. **Escuchar por ESP-NOW.** Al arrancar, el C3 se pone a la espera de paquetes.
    No inicia ninguna conexión; solo escucha.
@@ -18,10 +20,19 @@ que es **mucho más sencillo** que la emisora. Su vida entera cabe en cuatro pas
    motor en punto muerto** por su cuenta. Un coche de RC que se queda "a tope"
    porque perdió la señal es un problema serio.
 
-> **Nota honesta:** ese fail-safe vive en el receptor, no en la emisora. La emisora
-> de ahora, si se desconecta el mando, simplemente **deja de enviar**. Funciona
-> porque el receptor cubre esa parte, pero lo suyo sería tener también una red de
-> seguridad en la emisora. Está apuntado en la [hoja de ruta](12-HOJA-DE-RUTA.md).
+> **Doble red de seguridad.** Este fail-safe del receptor no está solo: la emisora
+> **también** tiene el suyo. Si desenchufas el mando, la emisora pasa a NEUTRO al
+> instante y lo sigue enviando a 50 Hz (ver
+> [Comunicación ESP-NOW](04-COMUNICACION-ESP-NOW.md)), así que el coche para sin
+> esperar a nada. El fail-safe del receptor cubre el otro caso: que la emisora se
+> apague, se quede sin batería o te vayas de rango y **dejen de llegar paquetes**.
+> Entre los dos tapan los dos agujeros.
+
+> **Un apunte sobre el enlace.** Para que el receptor y la emisora se hablen, el C3
+> tiene que estar configurado **exactamente igual** en la parte de radio: mismo
+> **Long Range** (`WIFI_PROTOCOL_LR`) y en el mismo canal. Si solo un lado usa Long
+> Range, no se comunican. Los detalles están en
+> [Comunicación ESP-NOW](04-COMUNICACION-ESP-NOW.md).
 
 ## Por qué el receptor es tan simple
 
