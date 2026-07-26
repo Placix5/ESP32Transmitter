@@ -63,8 +63,14 @@ typedef struct __attribute__((packed)) MensajeRadio {
 } MensajeRadio;
 
 // --- VARIABLES GLOBALES ---
-MensajeRadio instrucciones;          
 ModoConduccion modoSeleccionado = Eco;
+
+// Estado que se transmite al coche. Lo ESCRIBE el callback USB (core 0) y lo LEE la
+// tarea control_tx_task (core 1), así que se protege con un portMUX. Arranca en NEUTRO
+// para que, mientras no haya mando, el coche reciba "parado y recto".
+MensajeRadio estadoTx = { Eco, ESC_NEUTRO, ANGULO_CENTRO };
+portMUX_TYPE txMux = portMUX_INITIALIZER_UNLOCKED;
+bool mandoConectado = false;
 
 // Enlace y red
 uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -151,10 +157,12 @@ void cambiarModo(uint8_t dev_addr, uint8_t instance) {
 // --- CALLBACKS DE EVENTOS USB ---
 void tuh_xinput_mount_cb(uint8_t dev_addr, uint8_t instance, const xinputh_interface_t *xinput_itf) {
     // Cuando el mando se conecta, fijamos el LED al color inicial (Verde = Eco)
-    led_strip_set_pixel(led_strip, 0, 0, 255, 0); 
+    led_strip_set_pixel(led_strip, 0, 0, 255, 0);
     led_strip_refresh(led_strip);
-    
-    tuh_xinput_receive_report(dev_addr, instance); 
+
+    mandoConectado = true;
+
+    tuh_xinput_receive_report(dev_addr, instance);
 }
 
 void tuh_xinput_umount_cb(uint8_t dev_addr, uint8_t instance) {
@@ -165,6 +173,16 @@ void tuh_xinput_umount_cb(uint8_t dev_addr, uint8_t instance) {
     // Reseteamos estados para no arrastrar una pulsación/vibración de un mando que ya no está
     comboLBRBPulsado = false;
     vibracionActiva = false;
+    mandoConectado = false;
+
+    // FAILSAFE (lado emisor): si el mando se va, forzamos NEUTRO inmediato para que el
+    // coche pare al instante, sin esperar al timeout del receptor. La tarea TX seguirá
+    // enviando este estado neutro a 50 Hz.
+    portENTER_CRITICAL(&txMux);
+    estadoTx.modo_conduccion = (uint8_t)modoSeleccionado;
+    estadoTx.pwm_motor       = ESC_NEUTRO;
+    estadoTx.angulo_servo    = ANGULO_CENTRO;
+    portEXIT_CRITICAL(&txMux);
 }
 
 void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_interface_t const *xinput_itf, uint16_t len) {
@@ -226,12 +244,15 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
     // (El apagado de la vibración también se gestiona en tusb_host_task, por el mismo
     //  motivo: no depender de que sigan llegando reportes del mando.)
 
-    // 4. TRANSMISIÓN
-    instrucciones.angulo_servo = (uint8_t)angulo;
-    instrucciones.pwm_motor = (uint8_t)valorMotor;
-    instrucciones.modo_conduccion = (uint8_t)modoSeleccionado;
-
-    esp_now_send(client_mac, (uint8_t *) &instrucciones, sizeof(instrucciones));
+    // 4. ACTUALIZAR EL ESTADO A TRANSMITIR
+    // Ya NO enviamos aquí. Solo guardamos el último estado; el envío lo hace
+    // control_tx_task a 50 Hz constantes. Así el failsafe del receptor mide bien la
+    // pérdida de señal aunque el mando deje de reportar al mantener los sticks quietos.
+    portENTER_CRITICAL(&txMux);
+    estadoTx.angulo_servo    = (uint8_t)angulo;
+    estadoTx.pwm_motor       = (uint8_t)valorMotor;
+    estadoTx.modo_conduccion = (uint8_t)modoSeleccionado;
+    portEXIT_CRITICAL(&txMux);
 
     // Pedimos el siguiente paquete de datos al mando
     tuh_xinput_receive_report(dev_addr, instance);
@@ -265,6 +286,26 @@ void tusb_host_task(void *arg) {
     }
 }
 
+// --- TAREA DE TRANSMISIÓN DE CONTROL (50 Hz) ---
+// Envía el último estado al coche a cadencia FIJA, envíe o no reportes el mando. Ese
+// flujo constante es lo que (1) permite que el failsafe del receptor detecte de verdad
+// la pérdida de señal, y (2) resulta más regular (y normalmente menos tráfico) que
+// enviar por cada reporte del mando.
+void control_tx_task(void *arg) {
+    const TickType_t periodo = pdMS_TO_TICKS(20);   // 20 ms = 50 Hz
+    TickType_t ultimaHora = xTaskGetTickCount();
+    while (1) {
+        MensajeRadio copia;
+        portENTER_CRITICAL(&txMux);
+        copia = estadoTx;                 // instantánea atómica del estado
+        portEXIT_CRITICAL(&txMux);
+
+        esp_now_send(client_mac, (uint8_t *)&copia, sizeof(copia));
+
+        vTaskDelayUntil(&ultimaHora, periodo);
+    }
+}
+
 void app_main(void) {
     // Pequeño respiro al arrancar para que el voltaje se estabilice
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -291,6 +332,9 @@ void app_main(void) {
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_start();
 
+    // Sin power save: el enlace de control necesita el radio siempre despierto (menos latencia).
+    esp_wifi_set_ps(WIFI_PS_NONE);
+
     esp_now_init();
     
     esp_now_peer_info_t peerInfo = {};
@@ -312,4 +356,7 @@ void app_main(void) {
 
     // 5. Lanzar proceso USB en Núcleo 0
     xTaskCreatePinnedToCore(tusb_host_task, "tusb_host_task", 4096, NULL, 5, NULL, 0);
+
+    // 6. Lanzar la transmisión de control a 50 Hz en Núcleo 1 (separada del host USB del 0)
+    xTaskCreatePinnedToCore(control_tx_task, "control_tx_task", 4096, NULL, 5, NULL, 1);
 }
