@@ -33,15 +33,16 @@ Por eso todo el mundo lo usa.
 ## Dónde encaja en este proyecto
 
 Un detalle importante: **la emisora no genera el PWM**. La emisora manda solo
-números (ese `pwm_motor` de 0 a 180 y ese `angulo_servo` de 65 a 115). Quien
-convierte esos números en pulsos reales es el [**receptor**](08-EL-RECEPTOR.md),
-ya dentro del coche.
+números (ese `pwm_motor` de 0 a 180 y ese `angulo_servo` entre `ANGULO_MIN` y
+`ANGULO_MAX`). Quien convierte esos números en pulsos reales es el
+[**receptor**](08-EL-RECEPTOR.md), ya dentro del coche.
 
-Y ahora se entiende lo de los números "al revés" de los modos: el valor del motor
-va de 0 a 180 siendo **90 el punto muerto**. Menos de 90 es acelerar hacia
-delante; más de 90 es frenar o ir marcha atrás. Que "gas a tope" en Sport sea 0 y
-"freno a tope" sea 180 es simplemente cómo está calibrado este variador. Si el tuyo
-va al revés, se arregla cambiando esos números en la configuración (lo ves en
+Y ahora se entiende el juego de números de los modos: el valor del motor va de 0 a
+180 siendo **90 el punto muerto**. Por defecto, más de 90 es acelerar hacia
+delante (hasta 180) y menos de 90 es frenar o ir marcha atrás (hasta 0). Por eso
+"gas a tope" en Sport es 180 y "freno a tope" es 0. Este sentido depende de cómo
+esté cableado tu variador y orientado el motor: si el tuyo va al revés, lo
+inviertes de golpe con `MOTOR_INVERTIDO` (lo ves en
 [Adaptarlo a tu coche](11-ADAPTARLO-A-TU-COCHE.md)).
 
 ---

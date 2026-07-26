@@ -1,6 +1,7 @@
 # 8. El receptor: el otro lado de la radio
 
-El código del receptor vive en su **propio repositorio** (`ESP32Receiver`) y es,
+El código del receptor vive en su **propio repositorio**,
+[`ESP32Receiver`](https://github.com/Placix5/ESP32Receiver), y es,
 como la emisora, un proyecto **ESP-IDF nativo** — ya no es Arduino ni PlatformIO,
 así que las dos mitades comparten herramientas y forma de compilar. Para entender el
 sistema completo conviene saber qué hace, y la buena noticia es que es **mucho más

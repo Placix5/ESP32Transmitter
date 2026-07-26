@@ -40,13 +40,31 @@
 #define DEAD_ZONE 4000 
 
 // --- CONFIGURACIÓN DE POTENCIA POR MODO ---
-#define GAS_ECO 120                  
-#define GAS_NORMAL 150               
-#define GAS_SPORT 180                 
+// Según cómo esté orientado el motor / cableado el ESC, "acelerar" necesita valores de
+// PWM por ENCIMA del neutro (90 -> 180) o por DEBAJO (90 -> 0). Si el coche va al revés
+// (el gatillo de gas frena y el de freno acelera), descomenta MOTOR_INVERTIDO: se
+// intercambian los juegos de valores sin tocar nada más.
+//#define MOTOR_INVERTIDO
 
-#define FRENO_ECO 60
-#define FRENO_NORMAL 30
-#define FRENO_SPORT 0
+#ifndef MOTOR_INVERTIDO
+  // Normal: gas acelera hacia arriba (90 -> 180), freno hacia abajo (90 -> 0)
+  #define GAS_ECO 120
+  #define GAS_NORMAL 150
+  #define GAS_SPORT 180
+
+  #define FRENO_ECO 60
+  #define FRENO_NORMAL 30
+  #define FRENO_SPORT 0
+#else
+  // Invertido: gas acelera hacia abajo (90 -> 0), freno hacia arriba (90 -> 180)
+  #define GAS_ECO 60
+  #define GAS_NORMAL 30
+  #define GAS_SPORT 0
+
+  #define FRENO_ECO 120
+  #define FRENO_NORMAL 150
+  #define FRENO_SPORT 180
+#endif
 
 // Configuración de modos de conducción
 typedef enum {

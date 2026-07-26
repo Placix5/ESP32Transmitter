@@ -1,4 +1,14 @@
-# ESP32 RC Transmitter
+```
+████████╗ ██╗  ██╗
+╚══██╔══╝ ╚██╗██╔╝
+   ██║     ╚███╔╝
+   ██║     ██╔██╗
+   ██║    ██╔╝ ██╗
+   ╚═╝    ╚═╝  ╚═╝
+   E M I S O R A  ·  el lado que va en tu mano
+```
+
+# 🎮 ESP32 RC Transmitter · EMISORA (TX)
 
 Una emisora casera para coches de radiocontrol que usa un mando de Xbox, pero con
 el alcance de verdad que necesita un RC.
@@ -9,7 +19,9 @@ el coche por **ESP-NOW**, el protocolo de radio de Espressif. El resultado:
 cientos de metros de alcance en vez de cinco.
 
 > Este repositorio es la **emisora** (el transmisor). El coche lleva un segundo
-> ESP32, un **ESP32-C3**, que recibe las órdenes y mueve el variador y el servo.
+> ESP32, un **ESP32-C3**, que recibe las órdenes y mueve el variador y el servo. Su
+> código vive en su propio repo: **[ESP32Receiver (RX)](https://github.com/Placix5/ESP32Receiver)**.
+> Los dos tienen que estar flasheados para que el coche ande.
 
 ---
 
@@ -77,7 +89,7 @@ segundo** (50 Hz), a ritmo constante, así que se conduce sin lag perceptible.
 Host), un mando de Xbox One/Series con cable USB, y el LED RGB integrado de la
 placa.
 
-**El coche (receptor, repo aparte):** una placa **ESP32-C3**, un variador ESC
+**El coche (receptor, [repo aparte](https://github.com/Placix5/ESP32Receiver)):** una placa **ESP32-C3**, un variador ESC
 (HobbyWing QuicRun 1060 o cualquiera estándar de 50 Hz) y un servo de dirección
 (MG996R o similar).
 

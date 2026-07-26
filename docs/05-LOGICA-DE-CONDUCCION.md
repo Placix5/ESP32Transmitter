@@ -63,17 +63,26 @@ permiten**:
 
 | Modo | Color LED | Gas máx. | Freno máx. |
 |------|-----------|----------|------------|
-| Eco | 🟢 Verde | suave (60) | suave (120) |
-| Normal | 🔵 Azul | medio (30) | medio (150) |
-| Sport | 🔴 Rojo | a tope (0) | a tope (180) |
+| Eco | 🟢 Verde | suave (120) | suave (60) |
+| Normal | 🔵 Azul | medio (150) | medio (30) |
+| Sport | 🔴 Rojo | a tope (180) | a tope (0) |
 
 Cambias de modo manteniendo **L1 + R1** dos segundos. Cuando lo detecta, la
 emisora hace vibrar el mando y cambia el color del LED para confirmártelo, y rota
 Eco → Normal → Sport → Eco.
 
-Si te fijas en la tabla, los números de "gas" bajan cuanto más agresivo es el
-modo, y los de "freno" suben. Eso no es un error; tiene que ver con cómo el
-variador entiende la señal, y lo explico en la [sección de PWM](06-PWM.md).
+Fíjate en el patrón: el "gas" sube (120 → 180) cuanto más agresivo es el modo, y
+el "freno" baja (60 → 0). Ambos se miden respecto al **neutro (90)**: el gas se va
+por encima (hacia 180) y el freno por debajo (hacia 0). Cuanto más lejos del 90,
+más fuerza. Cómo un número acaba moviendo el motor lo tienes en la
+[sección de PWM](06-PWM.md).
+
+Este sentido depende de cómo esté **cableado el ESC / orientado el motor**. Si en
+tu coche el gatillo de gas frena y el de freno acelera, no tienes que reescribir
+estos seis números a mano: descomenta `MOTOR_INVERTIDO` al principio de
+[`main/main.c`](../main/main.c) y se intercambian los dos juegos de valores
+automáticamente. (El receptor tiene un ajuste hermano, `THROTTLE_INVERTED`, que
+debe ir coordinado para que la barra de LEDs del coche se encienda al acelerar.)
 
 ---
 
