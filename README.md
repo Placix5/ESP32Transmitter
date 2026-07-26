@@ -43,8 +43,8 @@ flowchart LR
 Coges el mando, lo enchufas por USB al ESP32-S3, y el S3 lee lo que haces
 (sticks, gatillos, botones), lo convierte en tres números —**modo, motor y
 dirección**— y los dispara por ESP-NOW al coche. El ESP32-C3 del coche traduce
-esos números en señales para el servo y el variador. Todo ello decenas de veces
-por segundo, así que se conduce sin lag perceptible.
+esos números en señales para el servo y el variador. Todo ello **50 veces por
+segundo** (50 Hz), a ritmo constante, así que se conduce sin lag perceptible.
 
 ---
 
@@ -55,7 +55,18 @@ por segundo, así que se conduce sin lag perceptible.
   y freno. Cambias de modo manteniendo **L1 + R1** dos segundos.
 - **Aviso por vibración y color**: al cambiar de modo el mando vibra y el LED de
   la emisora cambia (🟢 Eco, 🔵 Normal, 🔴 Sport).
-- **Zona muerta configurable** para que el coche vaya recto.
+- **Dirección con trim y topes independientes**: ajustas por separado cuánto gira
+  a cada lado y dónde quedan las "ruedas rectas", con zona muerta para que no se
+  desvíe solo.
+- **Envío constante a 50 Hz**: la emisora manda el último estado 50 veces por
+  segundo, envíe o no reportes el mando, para que el coche note de verdad si se
+  pierde la señal.
+- **Failsafe en la emisora**: si desenchufas el mando, la emisora pasa a NEUTRO al
+  instante (motor parado, ruedas rectas) y lo sigue enviando, así que el coche se
+  detiene en el acto.
+- **Enlace robusto y de largo alcance**: ESP-NOW en modo **Long Range** y sin
+  ahorro de energía (menos latencia), apuntado directamente a la MAC del coche
+  (*unicast*).
 - **Paquete de solo 3 bytes** por ESP-NOW: menos latencia y más fiabilidad.
 
 ---
