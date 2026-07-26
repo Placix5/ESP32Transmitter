@@ -335,6 +335,10 @@ void app_main(void) {
     // Sin power save: el enlace de control necesita el radio siempre despierto (menos latencia).
     esp_wifi_set_ps(WIFI_PS_NONE);
 
+    // LONG RANGE: modulación propietaria de Espressif, mucho más robusta y con más alcance.
+    // ¡CUIDADO! El receptor DEBE tener EXACTAMENTE esto mismo o dejan de comunicarse por completo.
+    esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_LR);
+
     esp_now_init();
     
     esp_now_peer_info_t peerInfo = {};
