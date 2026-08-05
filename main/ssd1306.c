@@ -13,6 +13,8 @@ static uint8_t s_buf[SSD1306_WIDTH * SSD1306_HEIGHT / 8];
 // Buffer de salida para el volcado (control byte 0x40 + datos). Estático para no
 // meter 1 KB en la pila de la tarea que llame a flush.
 static uint8_t s_out[1 + sizeof(s_buf)];
+// Copia de lo último enviado, para volcar solo las páginas que cambian (menos I2C).
+static uint8_t s_shadow[sizeof(s_buf)];
 
 // Envía una tanda de comandos (control byte 0x00 = "lo que sigue son comandos").
 static bool ssd1306_cmd(const uint8_t *cmds, size_t n) {
@@ -82,6 +84,7 @@ bool ssd1306_init(int sda_gpio, int scl_gpio, uint8_t addr) {
         return false;
     }
 
+    memset(s_shadow, 0xFF, sizeof(s_shadow));   // fuerza que el primer volcado sea completo
     ssd1306_clear();
     ssd1306_flush();
     ESP_LOGI(TAG, "OLED SSD1306 lista en 0x%02X (SDA=%d, SCL=%d)", addr, sda_gpio, scl_gpio);
@@ -205,12 +208,20 @@ void ssd1306_draw_string(int x, int y, const char *s) {
 
 void ssd1306_flush(void) {
     if (!s_ready) return;
-    // Fijamos la ventana a toda la pantalla: columnas 0..127, páginas 0..7.
-    uint8_t win[] = { 0x21, 0, 127, 0x22, 0, 7 };
-    ssd1306_cmd(win, sizeof(win));
+    // Volcamos SOLO las páginas (franjas de 8 px) que han cambiado desde la última vez.
+    // En telemetría suelen cambiar 1-2 líneas → ~128 bytes en vez de 1024: más fluido y
+    // con mucha menos carga de I2C.
+    for (int page = 0; page < SSD1306_HEIGHT / 8; page++) {
+        int off = page * SSD1306_WIDTH;
+        if (memcmp(&s_buf[off], &s_shadow[off], SSD1306_WIDTH) == 0) continue;  // sin cambios
 
-    // Datos: control byte 0x40 + los 1024 bytes del buffer.
-    s_out[0] = 0x40;
-    memcpy(&s_out[1], s_buf, sizeof(s_buf));
-    i2c_master_transmit(s_dev, s_out, sizeof(s_out), 100);
+        uint8_t win[] = { 0x21, 0, SSD1306_WIDTH - 1, 0x22, (uint8_t)page, (uint8_t)page };
+        ssd1306_cmd(win, sizeof(win));
+
+        s_out[0] = 0x40;
+        memcpy(&s_out[1], &s_buf[off], SSD1306_WIDTH);
+        i2c_master_transmit(s_dev, s_out, 1 + SSD1306_WIDTH, 100);
+
+        memcpy(&s_shadow[off], &s_buf[off], SSD1306_WIDTH);
+    }
 }

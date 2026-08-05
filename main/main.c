@@ -80,11 +80,20 @@ typedef enum {
 } ModoConduccion;
 
 // --- ESTRUCTURA MENSAJES ---
+// IDA (emisora -> coche). t_ms = millis() del emisor al enviar; el coche lo devuelve
+// tal cual para medir el round-trip. DEBE ser idéntica en el receptor.
 typedef struct __attribute__((packed)) MensajeRadio {
-  uint8_t modo_conduccion;  
-  uint8_t pwm_motor;        
-  uint8_t angulo_servo;     
+  uint8_t  modo_conduccion;
+  uint8_t  pwm_motor;
+  uint8_t  angulo_servo;
+  uint32_t t_ms;            // marca de tiempo del emisor (para medir la latencia)
 } MensajeRadio;
+
+// VUELTA (coche -> emisora). Telemetría a baja frecuencia. Idéntica en el receptor.
+typedef struct __attribute__((packed)) Telemetria {
+  uint32_t t_ms_eco;        // eco del t_ms del último control recibido -> RTT
+  int8_t   rssi_coche;      // RSSI (dBm) que ve el COCHE de los paquetes de control
+} Telemetria;
 
 // --- VARIABLES GLOBALES ---
 ModoConduccion modoSeleccionado = Eco;
@@ -92,9 +101,15 @@ ModoConduccion modoSeleccionado = Eco;
 // Estado que se transmite al coche. Lo ESCRIBE el callback USB (core 0) y lo LEE la
 // tarea control_tx_task (core 1), así que se protege con un portMUX. Arranca en NEUTRO
 // para que, mientras no haya mando, el coche reciba "parado y recto".
-MensajeRadio estadoTx = { Eco, ESC_NEUTRO, ANGULO_CENTRO };
+MensajeRadio estadoTx = { Eco, ESC_NEUTRO, ANGULO_CENTRO, 0 };
 portMUX_TYPE txMux = portMUX_INITIALIZER_UNLOCKED;
 bool mandoConectado = false;
+
+// Telemetría recibida del coche (la escribe el callback en la tarea WiFi, la lee la
+// pantalla). Tipos de 32/8 bits alineados => lectura atómica, con volatile basta.
+volatile uint32_t rtt_ms = 0;            // latencia ida y vuelta (ms)
+volatile int8_t   rssi_coche = 0;        // RSSI que ve el coche
+volatile uint32_t ultimaTelemetria = 0;  // millis() del último paquete de vuelta
 
 // Enlace y red
 uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -310,6 +325,18 @@ void tusb_host_task(void *arg) {
     }
 }
 
+// --- RECEPCIÓN DE TELEMETRÍA DEL COCHE (contexto tarea WiFi) ---
+// Llega ~5 veces/s. Calculamos la latencia (ahora - eco del t_ms) y guardamos el RSSI.
+void on_telemetria(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+    if (len == (int)sizeof(Telemetria)) {
+        Telemetria t;
+        memcpy(&t, data, sizeof(t));
+        rtt_ms = millis() - t.t_ms_eco;
+        rssi_coche = t.rssi_coche;
+        ultimaTelemetria = millis();
+    }
+}
+
 // --- TAREA DE TRANSMISIÓN DE CONTROL (50 Hz) ---
 // Envía el último estado al coche a cadencia FIJA, envíe o no reportes el mando. Ese
 // flujo constante es lo que (1) permite que el failsafe del receptor detecte de verdad
@@ -324,15 +351,36 @@ void control_tx_task(void *arg) {
         copia = estadoTx;                 // instantánea atómica del estado
         portEXIT_CRITICAL(&txMux);
 
+        copia.t_ms = millis();            // sello de tiempo en el momento real de envío
         esp_now_send(client_mac, (uint8_t *)&copia, sizeof(copia));
 
         vTaskDelayUntil(&ultimaHora, periodo);
     }
 }
 
-// --- TAREA DE PANTALLA (telemetría, ~5 Hz) ---
+// --- ICONO DE COBERTURA (estilo señal de móvil) ---
+// Traduce el RSSI (dBm) a 0..4 barras y las dibuja crecientes; las vacías dejan su zócalo.
+static int rssi_a_barras(int rssi) {
+    // Umbrales realistas para ESP-NOW: el RSSI se estanca sobre -50/-65 aunque estén
+    // pegados, así que -62 debe ser "lleno". Baja de verdad al alejarte.
+    if (rssi >= -70)  return 4;   // enlace fuerte (cerca o media distancia)
+    if (rssi >= -82)  return 3;   // bien
+    if (rssi >= -92)  return 2;   // regular
+    if (rssi >= -100) return 1;   // débil, cerca del borde
+    return 0;                     // perdiéndose
+}
+static void dibujar_senal(int x, int y_base, int barras) {
+    for (int i = 0; i < 4; i++) {
+        int h  = 2 + i * 2;          // alturas 2,4,6,8 px
+        int bx = x + i * 4;          // 3 px de ancho + 1 de hueco
+        if (i < barras) ssd1306_fill_rect(bx, y_base - h, 3, h, true);
+        else            ssd1306_fill_rect(bx, y_base - 1, 3, 1, true);   // zócalo (barra vacía)
+    }
+}
+
+// --- TAREA DE PANTALLA (telemetría, ~15 Hz) ---
 // Va APARTE de la tarea TX: un volcado completo del SSD1306 tarda ~25 ms por I2C,
-// demasiado para meterlo en el bucle de 50 Hz del control. Aquí, a 5 Hz, no molesta.
+// demasiado para meterlo en el bucle de 50 Hz del control.
 void oled_task(void *arg) {
     char linea[24];
     while (1) {
@@ -343,22 +391,54 @@ void oled_task(void *arg) {
         ModoConduccion modo = modoSeleccionado;
         bool conectado = mandoConectado;
 
+        uint32_t ahora = millis();
+        bool enlace = (ahora - ultimaTelemetria) < 1000;   // telemetría reciente = hay enlace con el coche
+        uint32_t rtt = rtt_ms;
+        int rssi = rssi_coche;
+        int barras = enlace ? rssi_a_barras(rssi) : 0;
+
         const char *nombreModo = (modo == Eco) ? "ECO" : (modo == Normal) ? "NORMAL" : "SPORT";
 
+        // GAS con signo: + acelerar, - frenar (respeta MOTOR_INVERTIDO). En % de recorrido.
+#ifdef MOTOR_INVERTIDO
+        int gas_sign = ESC_NEUTRO - (int)s.pwm_motor;
+#else
+        int gas_sign = (int)s.pwm_motor - ESC_NEUTRO;
+#endif
+        int gas_pct = gas_sign * 100 / (180 - ESC_NEUTRO);
+
+        // DIR con signo: + derecha, - izquierda, centrado en ANGULO_CENTRO (cada lado a su escala).
+        int dir = (int)s.angulo_servo - ANGULO_CENTRO;
+        int dir_pct;
+        if (dir >= 0) dir_pct = (ANGULO_MAX > ANGULO_CENTRO) ? dir * 100 / (ANGULO_MAX - ANGULO_CENTRO) : 0;
+        else          dir_pct = (ANGULO_CENTRO > ANGULO_MIN) ? dir * 100 / (ANGULO_CENTRO - ANGULO_MIN) : 0;
+
         ssd1306_clear();
-        ssd1306_draw_string(0, 0, "EMISORA  TX");
-        ssd1306_fill_rect(0, 9, SSD1306_WIDTH, 1, true);        // línea separadora
+
+        // Cabecera: título + icono de cobertura y RSSI arriba a la derecha
+        ssd1306_draw_string(0, 0, "EMISORA TX");
+        dibujar_senal(90, 8, barras);
+        if (enlace) snprintf(linea, sizeof(linea), "%d", rssi);
+        else        snprintf(linea, sizeof(linea), "--");
+        ssd1306_draw_string(108, 1, linea);
+
+        ssd1306_fill_rect(0, 10, SSD1306_WIDTH, 1, true);   // separador
 
         snprintf(linea, sizeof(linea), "MODO: %s", nombreModo);
-        ssd1306_draw_string(0, 14, linea);
+        ssd1306_draw_string(0, 13, linea);
 
-        ssd1306_draw_string(0, 26, conectado ? "MANDO: OK" : "MANDO: ---");
+        ssd1306_draw_string(0, 24, conectado ? "MANDO: OK" : "MANDO: ---");
 
-        snprintf(linea, sizeof(linea), "DIR:%3d GAS:%3d", s.angulo_servo, s.pwm_motor);
-        ssd1306_draw_string(0, 38, linea);
+        if (enlace) snprintf(linea, sizeof(linea), "PING: %lu MS", (unsigned long)rtt);
+        else        snprintf(linea, sizeof(linea), "PING: ---");
+        ssd1306_draw_string(0, 35, linea);
+
+        // Gas y dirección centrados en 0 (acelerar/derecha +, frenar/izquierda -)
+        snprintf(linea, sizeof(linea), "GAS:%+d DIR:%+d", gas_pct, dir_pct);
+        ssd1306_draw_string(0, 46, linea);
 
         ssd1306_flush();
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(66));   // ~15 Hz; gracias al volcado por páginas, es barato
     }
 }
 
@@ -412,6 +492,9 @@ void app_main(void) {
     peerInfo.channel = 0;     
     peerInfo.encrypt = false; 
     esp_now_add_peer(&peerInfo);
+
+    // Recepción de la telemetría de vuelta del coche.
+    esp_now_register_recv_cb(on_telemetria);
 
     // 4. Inicializar USB Host
     usb_phy_config_t phy_config = { 
