@@ -17,6 +17,7 @@
 #include "esp_now.h"
 #include "esp_mac.h"
 #include "nvs_flash.h"
+#include "nvs.h"
 
 // --- CONFIGURACIÓN ---
 #define PIN_LED 48
@@ -123,6 +124,42 @@ bool comboLBRBPulsado = false;   // ambos botones mantenidos ahora mismo
 bool modoCambiado = false;
 const uint32_t TIEMPO_PARA_CAMBIAR = 2000;
 
+// --- TRIM DE DIRECCIÓN EN RUNTIME (se cargan de NVS; los #define son el valor por defecto) ---
+int anguloCentro = ANGULO_CENTRO;
+int anguloMin    = ANGULO_MIN;
+int anguloMax    = ANGULO_MAX;
+
+// Instantánea de los valores CONFIRMADOS (lo último guardado, o lo cargado al arrancar).
+// Permite "deshacer cambios" sin releer la NVS.
+int savedCentro = ANGULO_CENTRO;
+int savedMin    = ANGULO_MIN;
+int savedMax    = ANGULO_MAX;
+
+// --- MODO CONFIGURACIÓN ---
+bool modoConfig   = false;   // en config: la cruceta ajusta el trim y el gas se fuerza a neutro
+bool dpadDownHeld = false;   // D-pad ABAJO mantenido (entrar/salir; el temporizado va en la tarea)
+bool pedirGuardar = false;   // Start en config -> guardar en NVS (lo hace la tarea, no el callback)
+int  avisoPendiente = 0;     // 2 = "por defecto", 3 = "deshecho" (feedback lo da la tarea)
+bool pedirRumbleOff = false; // al montar el mando -> apagar cualquier rumble que quedara colgado
+
+// --- RUMBLE (vibración) ---
+// El ÚNICO sitio que llama a tuh_xinput_set_rumble es servicio_rumble(), desde la tarea
+// USB y SIEMPRE con block=false. Con block=true el driver hace wait_for_tx_complete(),
+// que vuelve a llamar a tuh_task() de forma REENTRANTE y corrompe la pila USB (vibración
+// atascada, cuelgues). Además el envío se descarta en silencio si el endpoint está
+// ocupado (y set_rumble devuelve true igual), así que el "apagar" se reenvía varias veces.
+uint8_t rumbleObjL = 0,   rumbleObjR = 0;     // fuerza deseada ahora mismo
+uint8_t rumbleEnvL = 255, rumbleEnvR = 255;   // último valor enviado (255 = desconocido)
+uint32_t tUltimoRumble = 0;
+int reenviosOff = 0;                          // reintentos pendientes del "apagar"
+uint16_t botonesPrev = 0;    // wButtons anterior, para detectar flancos de pulsación
+
+// Mensaje temporal en la pantalla de config (lo pone la tarea USB, lo lee oled_task).
+// 0 = ninguno, 1 = "GUARDADO", 2 = "POR DEFECTO".
+volatile int      mensajeConfig  = 0;
+volatile uint32_t tMensajeConfig = 0;
+#define MENSAJE_CONFIG_MS 1500
+
 // Último mando conocido (para poder vibrar / cambiar modo desde la tarea USB)
 uint8_t mando_dev_addr = 0;
 uint8_t mando_instance = 0;
@@ -159,27 +196,104 @@ usbh_class_driver_t const* usbh_app_driver_get_cb(uint8_t* driver_count) {
     return &usbh_xinput_driver; 
 }
 
+// --- HELPERS DE TRIM Y FEEDBACK ---
+// Vibración de un solo pulso; el apagado lo hace tusb_host_task tras 'ms'.
+// Pide una vibración. NO habla con el USB: solo fija el objetivo, así es seguro llamarla
+// desde cualquier contexto. El envío real lo hace servicio_rumble() en la tarea USB.
+static void vibrar_lr(uint8_t l, uint8_t r, uint32_t ms) {
+    rumbleObjL = l;
+    rumbleObjR = r;
+    DURACION_VIBRACION = ms;
+    vibracionActiva = true;
+    tiempoInicioVibracion = millis();
+}
+
+static void vibrar(uint8_t fuerza, uint32_t ms) { vibrar_lr(fuerza, fuerza, ms); }
+
+// Apaga la vibración de forma insistente (varios reenvíos: un motor colgado hunde la
+// tensión del USB y desestabiliza el WiFi, así que el "off" no se puede perder).
+static void rumble_off(void) {
+    rumbleObjL = 0;
+    rumbleObjR = 0;
+    vibracionActiva = false;
+    reenviosOff = 4;
+}
+
+// Único punto que habla con el USB para el rumble. Llamar SOLO desde tusb_host_task.
+static void servicio_rumble(void) {
+    if (millis() - tUltimoRumble < 40) return;      // no saturamos el endpoint
+    bool cambio   = (rumbleObjL != rumbleEnvL) || (rumbleObjR != rumbleEnvR);
+    bool insistir = (rumbleObjL == 0 && rumbleObjR == 0 && reenviosOff > 0);
+    if (!cambio && !insistir) return;
+
+    tUltimoRumble = millis();
+    tuh_xinput_set_rumble(mando_dev_addr, mando_instance, rumbleObjL, rumbleObjR, false);
+    rumbleEnvL = rumbleObjL;
+    rumbleEnvR = rumbleObjR;
+    if (insistir) reenviosOff--;
+}
+
+// Mantiene coherentes centro/topes: min <= centro <= max, dentro de rango de servo.
+static void sanea_trim(void) {
+    if (anguloCentro < 20)  anguloCentro = 20;
+    if (anguloCentro > 160) anguloCentro = 160;
+    if (anguloMin < 0)            anguloMin = 0;
+    if (anguloMin > anguloCentro) anguloMin = anguloCentro;
+    if (anguloMax > 180)          anguloMax = 180;
+    if (anguloMax < anguloCentro) anguloMax = anguloCentro;
+}
+
+// Carga el trim de NVS (si existe); si no, se quedan los valores por defecto (#define).
+static void cargar_trim(void) {
+    nvs_handle_t h;
+    if (nvs_open("trim", NVS_READONLY, &h) == ESP_OK) {
+        int16_t v;
+        if (nvs_get_i16(h, "centro", &v) == ESP_OK) anguloCentro = v;
+        if (nvs_get_i16(h, "min", &v)    == ESP_OK) anguloMin    = v;
+        if (nvs_get_i16(h, "max", &v)    == ESP_OK) anguloMax    = v;
+        nvs_close(h);
+        sanea_trim();
+    }
+    // La instantánea "confirmada" arranca con lo que haya (lo de la NVS o los #define)
+    savedCentro = anguloCentro;
+    savedMin    = anguloMin;
+    savedMax    = anguloMax;
+}
+
+// Guarda el trim actual en NVS.
+static void guardar_trim(void) {
+    nvs_handle_t h;
+    if (nvs_open("trim", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_i16(h, "centro", (int16_t)anguloCentro);
+        nvs_set_i16(h, "min",    (int16_t)anguloMin);
+        nvs_set_i16(h, "max",    (int16_t)anguloMax);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    // Lo guardado pasa a ser el nuevo punto al que vuelve "deshacer"
+    savedCentro = anguloCentro;
+    savedMin    = anguloMin;
+    savedMax    = anguloMax;
+}
+
 // --- LÓGICA DEL MANDO ---
 void cambiarModo(uint8_t dev_addr, uint8_t instance) {
   switch (modoSeleccionado) {
     case Eco:
       modoSeleccionado = Normal;
-      tuh_xinput_set_rumble(dev_addr, instance, 0, 100, true);
-      DURACION_VIBRACION = 250; 
+      vibrar_lr(0, 100, 250);
       // Azul para Modo Normal (R:0, G:0, B:255)
       led_strip_set_pixel(led_strip, 0, 0, 0, 255); 
       break;
     case Normal:
       modoSeleccionado = Sport;
-      tuh_xinput_set_rumble(dev_addr, instance, 0, 255, true);
-      DURACION_VIBRACION = 500; 
+      vibrar_lr(0, 255, 500);
       // Rojo para Modo Sport (R:255, G:0, B:0)
       led_strip_set_pixel(led_strip, 0, 255, 0, 0);
       break;
     case Sport:
       modoSeleccionado = Eco;
-      tuh_xinput_set_rumble(dev_addr, instance, 50, 0, true);
-      DURACION_VIBRACION = 150; 
+      vibrar_lr(50, 0, 150);
       // Verde para Modo Eco (R:0, G:255, B:0)
       led_strip_set_pixel(led_strip, 0, 0, 255, 0);
       break;
@@ -187,10 +301,7 @@ void cambiarModo(uint8_t dev_addr, uint8_t instance) {
   
   // Refrescamos el LED para aplicar el nuevo color
   led_strip_refresh(led_strip);
-
-  // Guardamos el tiempo exacto en el que empezamos a vibrar
-  vibracionActiva = true;
-  tiempoInicioVibracion = millis();
+  // (El temporizado y el envío de la vibración los gestiona vibrar_lr + servicio_rumble.)
 }
 
 // --- CALLBACKS DE EVENTOS USB ---
@@ -200,6 +311,9 @@ void tuh_xinput_mount_cb(uint8_t dev_addr, uint8_t instance, const xinputh_inter
     led_strip_refresh(led_strip);
 
     mandoConectado = true;
+    mando_dev_addr = dev_addr;      // por si hay que apagar el rumble antes del primer reporte
+    mando_instance = instance;
+    pedirRumbleOff = true;          // apaga cualquier vibración que quedara colgada de antes
 
     tuh_xinput_receive_report(dev_addr, instance);
 }
@@ -213,6 +327,7 @@ void tuh_xinput_umount_cb(uint8_t dev_addr, uint8_t instance) {
     comboLBRBPulsado = false;
     vibracionActiva = false;
     mandoConectado = false;
+    botonesPrev = 0;
 
     // FAILSAFE (lado emisor): si el mando se va, forzamos NEUTRO inmediato para que el
     // coche pare al instante, sin esperar al timeout del receptor. La tarea TX seguirá
@@ -220,7 +335,7 @@ void tuh_xinput_umount_cb(uint8_t dev_addr, uint8_t instance) {
     portENTER_CRITICAL(&txMux);
     estadoTx.modo_conduccion = (uint8_t)modoSeleccionado;
     estadoTx.pwm_motor       = ESC_NEUTRO;
-    estadoTx.angulo_servo    = ANGULO_CENTRO;
+    estadoTx.angulo_servo    = (uint8_t)anguloCentro;   // centro ajustado (trim), no el #define
     portEXIT_CRITICAL(&txMux);
 }
 
@@ -232,51 +347,100 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, xinputh_i
     // ajustar de forma INDEPENDIENTE cuánto gira a cada lado (las cogidas hacen que gire
     // más a un lado que al otro) y usar ANGULO_CENTRO como trim de "ruedas rectas".
     int16_t rawX = pad->sThumbLX;
-    int angulo = ANGULO_CENTRO; // Reposo = recto
+    int angulo = anguloCentro; // Reposo = recto (usa el trim en RUNTIME, ajustable en config)
 
     if (rawX > DEAD_ZONE) {
-        // Stick a la derecha: centro -> ANGULO_MAX
-        angulo = map_value(rawX, DEAD_ZONE, 32767, ANGULO_CENTRO, ANGULO_MAX);
+        angulo = (anguloMax > anguloCentro)
+                 ? map_value(rawX, DEAD_ZONE, 32767, anguloCentro, anguloMax)
+                 : anguloCentro;
     } else if (rawX < -DEAD_ZONE) {
-        // Stick a la izquierda: centro -> ANGULO_MIN
-        angulo = map_value(rawX, -DEAD_ZONE, -32768, ANGULO_CENTRO, ANGULO_MIN);
+        angulo = (anguloCentro > anguloMin)
+                 ? map_value(rawX, -DEAD_ZONE, -32768, anguloCentro, anguloMin)
+                 : anguloCentro;
     }
-    angulo = constrain_value(angulo, ANGULO_MIN, ANGULO_MAX);
+    angulo = constrain_value(angulo, anguloMin, anguloMax);
       
-    // 2. DETECCIÓN DE LA COMBINACIÓN LB + RB
-    // Aquí SOLO registramos el estado de los botones. El temporizado (mantener 2 s) se
-    // evalúa en tusb_host_task con cadencia fija, porque el mando únicamente envía reportes
-    // cuando algo cambia: si mantienes los botones quietos puede dejar de enviarlos y el
-    // "millis() - inicio" nunca se comprobaría (por eso a veces no cambiaba de modo).
+    // 2. BOTONES
     mando_dev_addr = dev_addr;
     mando_instance = instance;
-    bool comboAhora = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) && (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
-    if (comboAhora && !comboLBRBPulsado) {
-        // Flanco de pulsación: arrancamos el cronómetro
-        comboLBRBPulsado = true;
-        modoCambiado = false;
-        tiempoInicioPulsacion = millis();
-    } else if (!comboAhora) {
-        // Al soltar siempre llega un reporte (es un cambio de estado), así que esto sí es fiable
-        comboLBRBPulsado = false;
+    uint16_t btn = pad->wButtons;
+    uint16_t pulsados = btn & ~botonesPrev;    // flancos de pulsación (uno por pulsación)
+    botonesPrev = btn;
+
+    bool lb = btn & XINPUT_GAMEPAD_LEFT_SHOULDER;
+    bool rb = btn & XINPUT_GAMEPAD_RIGHT_SHOULDER;
+
+    // Mantener D-pad ABAJO = entrar/salir de config (el temporizado de 2 s va en la tarea).
+    dpadDownHeld = (btn & XINPUT_GAMEPAD_DPAD_DOWN);
+
+    if (!modoConfig) {
+        // Conducción normal: cambio de modo con LB+RB mantenidos 2 s (temporizado en la tarea).
+        bool comboAhora = lb && rb;
+        if (comboAhora && !comboLBRBPulsado) {
+            comboLBRBPulsado = true;
+            modoCambiado = false;
+            tiempoInicioPulsacion = millis();
+        } else if (!comboAhora) {
+            comboLBRBPulsado = false;
+        }
+    } else {
+        // Modo configuración: la cruceta ajusta el trim (un paso por pulsación).
+        //   ←/→ = centro     LB+←/→ = tope izq.     RB+←/→ = tope der.
+        //   Start = guardar en NVS     Back = reset a valores por defecto
+        int paso = 0;
+        if      (pulsados & XINPUT_GAMEPAD_DPAD_RIGHT) paso = +1;
+        else if (pulsados & XINPUT_GAMEPAD_DPAD_LEFT)  paso = -1;
+        if (paso != 0) {
+            if      (lb && !rb) anguloMin += paso;
+            else if (rb && !lb) anguloMax += paso;
+            else                anguloCentro += paso;
+            sanea_trim();
+            // Tic suave por paso. Ahora es seguro llamarlo desde el callback: vibrar() solo
+            // fija el objetivo (no habla con el USB) y servicio_rumble() lo entrega con
+            // throttle, así que aporrear la cruceta no puede encadenar envíos ni colgar nada.
+            vibrar(50, 60);
+        }
+        // A = guardar   B = deshacer cambios   X = cargar valores por defecto
+        if (pulsados & XINPUT_GAMEPAD_A) {
+            pedirGuardar = true;            // el guardado real (flash) va en la tarea
+        }
+        if (pulsados & XINPUT_GAMEPAD_B) {
+            anguloCentro = savedCentro;     // vuelve a lo último guardado
+            anguloMin    = savedMin;
+            anguloMax    = savedMax;
+            sanea_trim();
+            avisoPendiente = 3;             // "DESHECHO"
+        }
+        if (pulsados & XINPUT_GAMEPAD_X) {
+            anguloCentro = ANGULO_CENTRO;   // valores de fábrica (los #define del código)
+            anguloMin    = ANGULO_MIN;
+            anguloMax    = ANGULO_MAX;
+            sanea_trim();
+            avisoPendiente = 2;             // "POR DEFECTO"
+        }
+
+        // El servo ENSEÑA en vivo lo que editas: sin bumper = centro, LB = tope izq, RB = tope der.
+        // (En config ignoramos el stick; el servo va al ángulo que estás ajustando.)
+        angulo = (lb && !rb) ? anguloMin : (rb && !lb) ? anguloMax : anguloCentro;
     }
 
-    // 3. GATILLOS
-    int gas = pad->bRightTrigger;
-    int freno = pad->bLeftTrigger;
+    // 3. GATILLOS (en modo config se quedan a NEUTRO: el coche no arranca mientras ajustas)
     int valorMotor = ESC_NEUTRO;
-
-    if (gas > 0) {
-        switch(modoSeleccionado) {
-            case Eco:    valorMotor = map_value(gas, 0, 255, ESC_NEUTRO, GAS_ECO); break;
-            case Normal: valorMotor = map_value(gas, 0, 255, ESC_NEUTRO, GAS_NORMAL); break;
-            case Sport:  valorMotor = map_value(gas, 0, 255, ESC_NEUTRO, GAS_SPORT); break;
-        }
-    } else if (freno > 0) {
-        switch(modoSeleccionado) {
-            case Eco:    valorMotor = map_value(freno, 0, 255, ESC_NEUTRO, FRENO_ECO); break;
-            case Normal: valorMotor = map_value(freno, 0, 255, ESC_NEUTRO, FRENO_NORMAL); break;
-            case Sport:  valorMotor = map_value(freno, 0, 255, ESC_NEUTRO, FRENO_SPORT); break;
+    if (!modoConfig) {
+        int gas = pad->bRightTrigger;
+        int freno = pad->bLeftTrigger;
+        if (gas > 0) {
+            switch(modoSeleccionado) {
+                case Eco:    valorMotor = map_value(gas, 0, 255, ESC_NEUTRO, GAS_ECO); break;
+                case Normal: valorMotor = map_value(gas, 0, 255, ESC_NEUTRO, GAS_NORMAL); break;
+                case Sport:  valorMotor = map_value(gas, 0, 255, ESC_NEUTRO, GAS_SPORT); break;
+            }
+        } else if (freno > 0) {
+            switch(modoSeleccionado) {
+                case Eco:    valorMotor = map_value(freno, 0, 255, ESC_NEUTRO, FRENO_ECO); break;
+                case Normal: valorMotor = map_value(freno, 0, 255, ESC_NEUTRO, FRENO_NORMAL); break;
+                case Sport:  valorMotor = map_value(freno, 0, 255, ESC_NEUTRO, FRENO_SPORT); break;
+            }
         }
     }
       
@@ -317,8 +481,77 @@ void tusb_host_task(void *arg) {
         // antes de cambiarModo(), tiempoInicioVibracion (fijado dentro) sería mayor y la
         // resta sin signo se desbordaría, apagando el rumble en la misma vuelta.
         if (vibracionActiva && (millis() - tiempoInicioVibracion) >= DURACION_VIBRACION) {
-            tuh_xinput_set_rumble(mando_dev_addr, mando_instance, 0, 0, true);
-            vibracionActiva = false;
+            rumble_off();
+        }
+
+        // ENTRAR/SALIR DE CONFIG: mantener D-pad ABAJO 2 s (temporizado aquí, cadencia fija).
+        static bool downPrev = false;
+        static uint32_t tDown = 0;
+        static bool downProcesado = false;
+        if (dpadDownHeld) {
+            if (!downPrev) { tDown = millis(); downProcesado = false; }
+            else if (!downProcesado && (millis() - tDown) >= 2000) {
+                downProcesado = true;
+                modoConfig = !modoConfig;
+                comboLBRBPulsado = false;
+                if (modoConfig) {
+                    vibrar(150, 300);              // entrada en config
+                    portENTER_CRITICAL(&txMux);    // seguridad: coche a neutro al instante
+                    estadoTx.pwm_motor = ESC_NEUTRO;
+                    portEXIT_CRITICAL(&txMux);
+                } else {
+                    vibrar(80, 150);               // salida de config
+                }
+            }
+        }
+        downPrev = dpadDownHeld;
+
+        // GUARDAR TRIM en NVS cuando se pidió con Start (la escritura de flash va aquí).
+        if (pedirGuardar) {
+            pedirGuardar = false;
+            guardar_trim();
+            vibrar(255, 400);                      // pulso inconfundible: se ha guardado
+            mensajeConfig = 1;                     // + aviso en pantalla
+            tMensajeConfig = millis();
+        }
+
+        // Feedback de config: el rumble SIEMPRE se hace aquí, nunca desde el callback.
+        if (avisoPendiente != 0) {
+            mensajeConfig = avisoPendiente;        // 2 = por defecto, 3 = deshecho
+            avisoPendiente = 0;
+            vibrar(120, 150);
+            tMensajeConfig = millis();
+        }
+        // Al conectar el mando, apagamos cualquier rumble que hubiera quedado colgado
+        // (el mando conserva su estado de vibración aunque reinicies el ESP32).
+        if (pedirRumbleOff) {
+            pedirRumbleOff = false;
+            rumbleEnvL = rumbleEnvR = 255;   // fuerza que el "off" se envíe de verdad
+            rumble_off();
+        }
+
+        // ENVÍO REAL del rumble: único punto, no bloqueante. Todo lo demás solo fija objetivos.
+        servicio_rumble();
+
+        // LED: en config parpadea en blanco; al salir, restaura el color del modo.
+        static uint32_t tLed = 0;
+        static bool ledOn = false;
+        static bool eraConfig = false;
+        if (modoConfig) {
+            eraConfig = true;
+            if (millis() - tLed >= 400) {
+                tLed = millis();
+                ledOn = !ledOn;
+                uint8_t v = ledOn ? 120 : 0;
+                led_strip_set_pixel(led_strip, 0, v, v, v);
+                led_strip_refresh(led_strip);
+            }
+        } else if (eraConfig) {
+            eraConfig = false;                     // acabamos de salir: color del modo
+            uint8_t r = 0, g = 0, b = 0;
+            if (modoSeleccionado == Eco) g = 255; else if (modoSeleccionado == Normal) b = 255; else r = 255;
+            led_strip_set_pixel(led_strip, 0, r, g, b);
+            led_strip_refresh(led_strip);
         }
 
         vTaskDelay(1);
@@ -391,6 +624,35 @@ void oled_task(void *arg) {
         ModoConduccion modo = modoSeleccionado;
         bool conectado = mandoConectado;
 
+        // Pantalla de CONFIGURACIÓN: muestra el trim mientras lo ajustas con la cruceta.
+        if (modoConfig) {
+            ssd1306_clear();
+            ssd1306_draw_string(0, 0, "CONFIG DIR");
+            ssd1306_fill_rect(0, 10, SSD1306_WIDTH, 1, true);
+            snprintf(linea, sizeof(linea), "CENTRO: %d", anguloCentro);
+            ssd1306_draw_string(0, 13, linea);
+            snprintf(linea, sizeof(linea), "IZQ (LB): %d", anguloMin);
+            ssd1306_draw_string(0, 23, linea);
+            snprintf(linea, sizeof(linea), "DER (RB): %d", anguloMax);
+            ssd1306_draw_string(0, 33, linea);
+            // Abajo: confirmación temporal si acabas de tocar A/B/X; si no, la ayuda de botones.
+            if (mensajeConfig != 0 && (millis() - tMensajeConfig) < MENSAJE_CONFIG_MS) {
+                const char *msg = (mensajeConfig == 1) ? "GUARDADO"
+                                : (mensajeConfig == 2) ? "POR DEFECTO" : "DESHECHO";
+                // Recuadro relleno + texto en negativo: se ve de un golpe de vista.
+                int ancho = (int)strlen(msg) * 6 - 1;
+                ssd1306_fill_rect(0, 45, SSD1306_WIDTH, 11, true);
+                ssd1306_draw_string_inv((SSD1306_WIDTH - ancho) / 2, 47, msg);
+            } else {
+                if (mensajeConfig != 0 && (millis() - tMensajeConfig) >= MENSAJE_CONFIG_MS) mensajeConfig = 0;
+                ssd1306_draw_string(0, 45, "A=GUARDAR B=DESHACER");
+                ssd1306_draw_string(0, 55, "X=POR DEFECTO");
+            }
+            ssd1306_flush();
+            vTaskDelay(pdMS_TO_TICKS(66));
+            continue;
+        }
+
         uint32_t ahora = millis();
         bool enlace = (ahora - ultimaTelemetria) < 1000;   // telemetría reciente = hay enlace con el coche
         uint32_t rtt = rtt_ms;
@@ -408,10 +670,10 @@ void oled_task(void *arg) {
         int gas_pct = gas_sign * 100 / (180 - ESC_NEUTRO);
 
         // DIR con signo: + derecha, - izquierda, centrado en ANGULO_CENTRO (cada lado a su escala).
-        int dir = (int)s.angulo_servo - ANGULO_CENTRO;
+        int dir = (int)s.angulo_servo - anguloCentro;
         int dir_pct;
-        if (dir >= 0) dir_pct = (ANGULO_MAX > ANGULO_CENTRO) ? dir * 100 / (ANGULO_MAX - ANGULO_CENTRO) : 0;
-        else          dir_pct = (ANGULO_CENTRO > ANGULO_MIN) ? dir * 100 / (ANGULO_CENTRO - ANGULO_MIN) : 0;
+        if (dir >= 0) dir_pct = (anguloMax > anguloCentro) ? dir * 100 / (anguloMax - anguloCentro) : 0;
+        else          dir_pct = (anguloCentro > anguloMin) ? dir * 100 / (anguloCentro - anguloMin) : 0;
 
         ssd1306_clear();
 
@@ -468,6 +730,9 @@ void app_main(void) {
         nvs_flash_erase();
         nvs_flash_init();
     }
+
+    // Cargar el trim de dirección guardado (si lo hay; si no, quedan los valores por defecto).
+    cargar_trim();
 
     // 3. Inicializar WiFi y ESP-NOW
     esp_netif_init();

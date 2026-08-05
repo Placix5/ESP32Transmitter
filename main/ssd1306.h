@@ -21,5 +21,9 @@ void ssd1306_draw_rect(int x, int y, int w, int h, bool on);   // solo el borde
 void ssd1306_draw_char(int x, int y, char c);
 void ssd1306_draw_string(int x, int y, const char *s);
 
+// Texto en NEGATIVO: apaga los píxeles del glifo y no toca el resto. Pensado para
+// escribir encima de un rectángulo relleno (mensajes destacados).
+void ssd1306_draw_string_inv(int x, int y, const char *s);
+
 // Vuelca el buffer entero a la pantalla.
 void ssd1306_flush(void);

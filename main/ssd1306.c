@@ -206,6 +206,26 @@ void ssd1306_draw_string(int x, int y, const char *s) {
     }
 }
 
+// Igual que draw_char pero APAGANDO los píxeles del glifo (para texto sobre fondo relleno).
+static void draw_char_inv(int x, int y, char c) {
+    if (c >= 'a' && c <= 'z') c -= 32;
+    if (c < FONT_FIRST || c > FONT_LAST) c = ' ';
+    const uint8_t *g = font5x7[(uint8_t)c - FONT_FIRST];
+    for (int col = 0; col < 5; col++) {
+        for (int row = 0; row < 7; row++) {
+            if ((g[col] >> row) & 1) ssd1306_set_pixel(x + col, y + row, false);
+        }
+    }
+}
+
+void ssd1306_draw_string_inv(int x, int y, const char *s) {
+    while (*s) {
+        if (x + 5 > SSD1306_WIDTH) break;
+        draw_char_inv(x, y, *s++);
+        x += 6;
+    }
+}
+
 void ssd1306_flush(void) {
     if (!s_ready) return;
     // Volcamos SOLO las páginas (franjas de 8 px) que han cambiado desde la última vez.
