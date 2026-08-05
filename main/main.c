@@ -8,6 +8,7 @@
 // --- LIBRERÍAS USB Y LED ---
 #include "esp_private/usb_phy.h" 
 #include "led_strip.h"
+#include "ssd1306.h"
 #include "tusb.h"
 #include "xinput_host.h"
 
@@ -18,7 +19,12 @@
 #include "nvs_flash.h"
 
 // --- CONFIGURACIÓN ---
-#define PIN_LED 48 
+#define PIN_LED 48
+
+// --- PANTALLA OLED (SSD1306 128x64, I2C) ---
+#define PIN_OLED_SDA 4
+#define PIN_OLED_SCL 5
+#define OLED_ADDR    0x3C
 
 // Configuración de límites del Servo (perillas independientes: ajustar por prueba y error)
 
@@ -324,6 +330,38 @@ void control_tx_task(void *arg) {
     }
 }
 
+// --- TAREA DE PANTALLA (telemetría, ~5 Hz) ---
+// Va APARTE de la tarea TX: un volcado completo del SSD1306 tarda ~25 ms por I2C,
+// demasiado para meterlo en el bucle de 50 Hz del control. Aquí, a 5 Hz, no molesta.
+void oled_task(void *arg) {
+    char linea[24];
+    while (1) {
+        MensajeRadio s;
+        portENTER_CRITICAL(&txMux);
+        s = estadoTx;                       // instantánea del estado transmitido
+        portEXIT_CRITICAL(&txMux);
+        ModoConduccion modo = modoSeleccionado;
+        bool conectado = mandoConectado;
+
+        const char *nombreModo = (modo == Eco) ? "ECO" : (modo == Normal) ? "NORMAL" : "SPORT";
+
+        ssd1306_clear();
+        ssd1306_draw_string(0, 0, "EMISORA  TX");
+        ssd1306_fill_rect(0, 9, SSD1306_WIDTH, 1, true);        // línea separadora
+
+        snprintf(linea, sizeof(linea), "MODO: %s", nombreModo);
+        ssd1306_draw_string(0, 14, linea);
+
+        ssd1306_draw_string(0, 26, conectado ? "MANDO: OK" : "MANDO: ---");
+
+        snprintf(linea, sizeof(linea), "DIR:%3d GAS:%3d", s.angulo_servo, s.pwm_motor);
+        ssd1306_draw_string(0, 38, linea);
+
+        ssd1306_flush();
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
 void app_main(void) {
     // Pequeño respiro al arrancar para que el voltaje se estabilice
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -332,7 +370,17 @@ void app_main(void) {
     led_strip_config_t strip_config = { .strip_gpio_num = PIN_LED, .max_leds = 1, };
     led_strip_rmt_config_t rmt_config = { .resolution_hz = 10 * 1000 * 1000, };
     led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip);
-    led_strip_clear(led_strip); 
+    led_strip_clear(led_strip);
+
+    // 1b. Inicializar la pantalla OLED y mostrar una pantalla de arranque.
+    //     Luego oled_task la sobrescribe con la telemetría en vivo.
+    if (ssd1306_init(PIN_OLED_SDA, PIN_OLED_SCL, OLED_ADDR)) {
+        ssd1306_clear();
+        ssd1306_draw_string(0, 0,  "ESP32 RC");
+        ssd1306_draw_string(0, 12, "EMISORA  TX");
+        ssd1306_draw_string(0, 40, "ARRANCANDO...");
+        ssd1306_flush();
+    }
 
     // 2. Inicializar NVS (con autolimpieza para evitar Boot Loops)
     esp_err_t ret = nvs_flash_init();
@@ -381,4 +429,7 @@ void app_main(void) {
 
     // 6. Lanzar la transmisión de control a 50 Hz en Núcleo 1 (separada del host USB del 0)
     xTaskCreatePinnedToCore(control_tx_task, "control_tx_task", 4096, NULL, 5, NULL, 1);
+
+    // 7. Lanzar la pantalla (telemetría) a baja frecuencia y prioridad, en el Núcleo 1
+    xTaskCreatePinnedToCore(oled_task, "oled_task", 4096, NULL, 3, NULL, 1);
 }
