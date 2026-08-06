@@ -56,4 +56,4 @@ anda.
 
 ---
 
-« [Anterior: Adaptarlo a tu coche](11-ADAPTARLO-A-TU-COCHE.md) · [📚 Índice](README.md) · [Volver a la portada](../README.md)
+« [Anterior: Pantalla y telemetría](12-PANTALLA-Y-TELEMETRIA.md) · [📚 Índice](README.md) · [Volver a la portada](../README.md)

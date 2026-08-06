@@ -38,9 +38,10 @@ girar.
    y al driver de XInput.
 3. **El S3 hace cuentas.** Descarta el ruido si el stick está casi centrado
    (la zona muerta), y convierte ese -32768...+32767 en un ángulo de servo cómodo,
-   dentro de los topes que hayas fijado (ajustables a cada lado por separado).
-4. **Empaqueta el resultado** junto con el valor del motor y el modo actual en un
-   paquetito de 3 bytes.
+   dentro de los topes que hayas fijado (ajustables a cada lado por separado y
+   **en caliente**, sin recompilar).
+4. **Empaqueta el resultado** junto con el valor del motor, el modo actual y una
+   **marca de tiempo** en un paquetito de 7 bytes.
 5. **Lo dispara por ESP-NOW.** El paquete sale por la antena Wi-Fi del S3.
 6. **El C3 del coche lo recibe.** Saca los tres números del paquete.
 7. **El C3 genera dos señales PWM:** una le dice al servo "ponte a 108 grados" y
@@ -50,8 +51,49 @@ girar.
 Todo esto, de tu pulgar a la rueda, ocurre en milisegundos y se repite **50 veces
 por segundo** (50 Hz), a ritmo constante. Por eso la conducción se siente inmediata.
 
+## El viaje de vuelta: la telemetría
+
+Hay un segundo camino, más tranquilo, en sentido contrario. Antes la radio iba
+solo de la emisora al coche, y eso dejaba la pregunta más incómoda sin
+responder: *¿le está llegando de verdad?*
+
+Ahora el coche contesta, unas **5 veces por segundo** (mucho menos que el
+control: es información de apoyo, no hay que malgastar radio en ella):
+
+1. El coche **devuelve la marca de tiempo** que venía en el paquete de ida, tal
+   cual, sin tocarla.
+2. Añade el **RSSI**: con cuánta fuerza le está llegando la señal.
+3. La emisora recibe eso y hace una resta: la hora de ahora menos la marca que
+   acaba de volver. Eso es la **latencia de ida y vuelta**, el "ping".
+4. Y lo pinta todo en la **pantalla OLED**: ping, barritas de cobertura, modo,
+   gas y dirección.
+
+El truco de la marca de tiempo es más listo de lo que parece: como la emisora
+compara **su propio reloj consigo mismo**, no hace falta que las dos placas tengan
+la hora sincronizada. Está explicado en
+[Comunicación ESP-NOW](04-COMUNICACION-ESP-NOW.md).
+
+## El sistema completo, con los dos sentidos
+
+```mermaid
+flowchart LR
+    A[Mando Xbox] -->|cable USB<br/>XInput| B[ESP32-S3<br/>EMISORA]
+    B -->|vibración| A
+    B --> O[Pantalla OLED<br/>SSD1306 · I2C]
+    B -->|LED RGB| L[Modo / config]
+    B ==>|"ESP-NOW · 50 Hz<br/>control (7 bytes)"| C[ESP32-C3<br/>RECEPTOR en el coche]
+    C -.->|"ESP-NOW · ~5 Hz<br/>telemetría (5 bytes)"| B
+    C -->|PWM| D[Servo dirección<br/>MG996R]
+    C -->|PWM| E[Variador / ESC<br/>QuicRun 1060]
+```
+
+Fíjate en el grosor de las flechas de radio: la gruesa es el **control**, el flujo
+constante de 50 Hz del que depende que el coche obedezca. La de puntos es la
+**telemetría**, que va a su aire y que si se pierde no afecta a la conducción,
+solo a lo que ves en la pantalla.
+
 En las siguientes secciones abrimos cada tramo del viaje: primero cómo se lee el
-mando, luego cómo se manda la orden al coche.
+mando, luego cómo se manda la orden al coche y cómo vuelve la telemetría.
 
 ---
 

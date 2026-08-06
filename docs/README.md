@@ -40,9 +40,11 @@ interese. Cada página tiene al pie una navegación para moverte.
    instalar ESP-IDF en VSCode paso a paso.
 10. [**Puesta en marcha**](10-PUESTA-EN-MARCHA.md) — compilar, flashear y conducir
     con los botones de VSCode (o por terminal).
-11. [**Adaptarlo a tu coche**](11-ADAPTARLO-A-TU-COCHE.md) — ajustes y calibración
-    para tu chasis.
-12. [**Hoja de ruta**](12-HOJA-DE-RUTA.md) — lo que todavía no está bien y en qué
+11. [**Adaptarlo a tu coche**](11-ADAPTARLO-A-TU-COCHE.md) — el modo configuración,
+    el trim guardado en memoria y la calibración de tu chasis.
+12. [**Pantalla y telemetría**](12-PANTALLA-Y-TELEMETRIA.md) — la OLED, la latencia
+    real con el coche y el icono de cobertura.
+13. [**Hoja de ruta**](13-HOJA-DE-RUTA.md) — lo que todavía no está bien y en qué
     puedes echar una mano.
 
 ---

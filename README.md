@@ -70,6 +70,13 @@ segundo** (50 Hz), a ritmo constante, así que se conduce sin lag perceptible.
 - **Dirección con trim y topes independientes**: ajustas por separado cuánto gira
   a cada lado y dónde quedan las "ruedas rectas", con zona muerta para que no se
   desvíe solo.
+- **Ajuste en vivo, sin recompilar**: un **modo configuración** (mantén el D-pad
+  abajo 2 s) te deja afinar el centro y los topes **con el mando, en el coche**,
+  viendo moverse el servo, y **guardarlo en la memoria** de la emisora.
+- **Pantalla OLED con telemetría**: modo activo, estado del mando, **latencia
+  (ping) real** con el coche e **icono de cobertura** con la fuerza de señal, más
+  el gas y la dirección en % con signo. Es opcional: sin pantalla todo funciona
+  igual.
 - **Envío constante a 50 Hz**: la emisora manda el último estado 50 veces por
   segundo, envíe o no reportes el mando, para que el coche note de verdad si se
   pierde la señal.
@@ -79,7 +86,10 @@ segundo** (50 Hz), a ritmo constante, así que se conduce sin lag perceptible.
 - **Enlace robusto y de largo alcance**: ESP-NOW en modo **Long Range** y sin
   ahorro de energía (menos latencia), apuntado directamente a la MAC del coche
   (*unicast*).
-- **Paquete de solo 3 bytes** por ESP-NOW: menos latencia y más fiabilidad.
+- **Telemetría bidireccional**: el coche devuelve un eco de tiempo y su nivel de
+  señal, y con eso la emisora calcula y muestra la latencia de ida y vuelta.
+- **Paquetes diminutos** por ESP-NOW (7 bytes de ida, 5 de vuelta): menos latencia
+  y más fiabilidad.
 
 ---
 
@@ -87,7 +97,8 @@ segundo** (50 Hz), a ritmo constante, así que se conduce sin lag perceptible.
 
 **La emisora (este repo):** una placa **ESP32-S3** (es la que puede hacer de USB
 Host), un mando de Xbox One/Series con cable USB, y el LED RGB integrado de la
-placa.
+placa. Opcionalmente, una **pantalla OLED SSD1306 de 128x64 por I2C** (la típica
+de 0,96" con 4 pines) para la telemetría.
 
 **El coche (receptor, [repo aparte](https://github.com/Placix5/ESP32Receiver)):** una placa **ESP32-C3**, un variador ESC
 (HobbyWing QuicRun 1060 o cualquiera estándar de 50 Hz) y un servo de dirección
@@ -131,15 +142,16 @@ Un adelanto de lo que encontrarás:
 | [Por qué existe](docs/01-POR-QUE-EXISTE.md) | La historia del alcance y la idea de partir el sistema en dos. |
 | [Arquitectura del sistema](docs/02-ARQUITECTURA-DEL-SISTEMA.md) | Por qué dos ESP32 y el viaje de una orden de tu pulgar a las ruedas. |
 | [Leer el mando](docs/03-LEER-EL-MANDO.md) | USB Host, XInput y TinyUSB (y el parche que hubo que hacer). |
-| [Comunicación ESP-NOW](docs/04-COMUNICACION-ESP-NOW.md) | Por qué gana al Bluetooth y qué viaja en el paquete de 3 bytes. |
+| [Comunicación ESP-NOW](docs/04-COMUNICACION-ESP-NOW.md) | Por qué gana al Bluetooth, qué viaja en el paquete y la telemetría de vuelta. |
 | [Lógica de conducción](docs/05-LOGICA-DE-CONDUCCION.md) | Zona muerta, mapeo de valores y los tres modos. |
 | [PWM](docs/06-PWM.md) | Cómo un número acaba moviendo un servo y un motor. |
 | [FreeRTOS y núcleos](docs/07-FREERTOS-Y-NUCLEOS.md) | Tareas, los dos núcleos del S3 y el arranque del USB. |
 | [El receptor](docs/08-EL-RECEPTOR.md) | Qué hace el ESP32-C3 del coche. |
 | [Requisitos y entorno](docs/09-ENTORNO-ESP-IDF.md) | Hardware necesario e instalar ESP-IDF en VSCode paso a paso. |
 | [Puesta en marcha](docs/10-PUESTA-EN-MARCHA.md) | Compilar, flashear y conducir (con los botones de VSCode). |
-| [Adaptarlo a tu coche](docs/11-ADAPTARLO-A-TU-COCHE.md) | Ajustes y calibración para tu chasis. |
-| [Hoja de ruta](docs/12-HOJA-DE-RUTA.md) | Lo que falta y en qué puedes ayudar. |
+| [Adaptarlo a tu coche](docs/11-ADAPTARLO-A-TU-COCHE.md) | El modo configuración, el trim guardado en memoria y la calibración de tu chasis. |
+| [Pantalla y telemetría](docs/12-PANTALLA-Y-TELEMETRIA.md) | La OLED, la latencia real y el icono de cobertura. |
+| [Hoja de ruta](docs/13-HOJA-DE-RUTA.md) | Lo que falta y en qué puedes ayudar. |
 
 ---
 
